@@ -1,18 +1,45 @@
 // migrate.js
 import pool from "./db.js";
 
+// Cek apakah user menjalankan dengan flag "--fresh"
+const isFresh = process.argv.includes("--fresh");
+
 const migrate = async () => {
   const client = await pool.connect();
 
   try {
-    console.log("⏳ Memulai Migrasi Database (Versi Sinkronisasi Local)...");
+    console.log(`⏳ Memulai Migrasi Database ${isFresh ? '(MODE FRESH: Reset Total)' : '(Mode Update)'}...`);
     await client.query("BEGIN");
+
+    // ==========================================
+    // 0. RESET DATA (HANYA JIKA --fresh)
+    // ==========================================
+    if (isFresh) {
+        console.log("⚠️  Menghapus tabel lama (Drop Tables)...");
+        // Urutan drop tidak terlalu penting jika pakai CASCADE, tapi lebih rapi dari anak ke induk
+        await client.query(`
+            DROP TABLE IF EXISTS opname_items CASCADE;
+            DROP TABLE IF EXISTS opname_sessions CASCADE;
+            DROP TABLE IF EXISTS loans CASCADE;
+            DROP TABLE IF EXISTS assets CASCADE;
+            DROP TABLE IF EXISTS import_histories CASCADE;
+            DROP TABLE IF EXISTS role_permissions CASCADE;
+            DROP TABLE IF EXISTS user_roles CASCADE;
+            DROP TABLE IF EXISTS permissions CASCADE;
+            DROP TABLE IF EXISTS roles CASCADE;
+            DROP TABLE IF EXISTS users CASCADE;
+            DROP TABLE IF EXISTS budget_codes CASCADE;
+            DROP TABLE IF EXISTS funding_sources CASCADE;
+            DROP TABLE IF EXISTS asset_categories CASCADE;
+            DROP TABLE IF EXISTS locations CASCADE;
+            DROP TABLE IF EXISTS entities CASCADE;
+        `);
+    }
 
     // ==========================================
     // 1. MASTER DATA
     // ==========================================
     
-    // Tabel: Entities
     console.log("Creating table: entities...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS entities (
@@ -24,7 +51,6 @@ const migrate = async () => {
       );
     `);
 
-    // Tabel: Locations
     console.log("Creating table: locations...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS locations (
@@ -37,7 +63,6 @@ const migrate = async () => {
       );
     `);
 
-    // Tabel: Asset Categories
     console.log("Creating table: asset_categories...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS asset_categories (
@@ -50,7 +75,6 @@ const migrate = async () => {
       );
     `);
 
-    // Tabel: Funding Sources
     console.log("Creating table: funding_sources...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS funding_sources (
@@ -64,7 +88,6 @@ const migrate = async () => {
       );
     `);
 
-    // Tabel: Budget Codes
     console.log("Creating table: budget_codes...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS budget_codes (
@@ -81,7 +104,6 @@ const migrate = async () => {
     // 2. USERS & ROLES
     // ==========================================
 
-    // Tabel: Users
     console.log("Creating table: users...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -98,7 +120,6 @@ const migrate = async () => {
       );
     `);
 
-    // Tabel: Roles
     console.log("Creating table: roles...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS roles (
@@ -111,7 +132,6 @@ const migrate = async () => {
       );
     `);
 
-    // Tabel: Permissions
     console.log("Creating table: permissions...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS permissions (
@@ -124,7 +144,6 @@ const migrate = async () => {
       );
     `);
 
-    // Pivot: User Roles
     console.log("Creating table: user_roles...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS user_roles (
@@ -134,7 +153,6 @@ const migrate = async () => {
       );
     `);
 
-    // Pivot: Role Permissions
     console.log("Creating table: role_permissions...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS role_permissions (
@@ -160,7 +178,7 @@ const migrate = async () => {
     `);
 
     // ==========================================
-    // 4. ASSETS (Updated Sesuai SQL Local)
+    // 4. ASSETS
     // ==========================================
     console.log("Creating table: assets...");
     await client.query(`
@@ -169,9 +187,8 @@ const migrate = async () => {
         name TEXT NOT NULL,
         code TEXT NOT NULL UNIQUE,
         
-        -- DUA KOLOM LOKASI (Agar Backend Lama & Baru Jalan)
-        location TEXT,  -- Kolom Legacy (Penyebab error sebelumnya)
-        location_id INTEGER REFERENCES locations(id), -- Kolom Relasi Baru
+        location TEXT, 
+        location_id INTEGER REFERENCES locations(id),
 
         category_id INTEGER REFERENCES asset_categories(id),
         funding_source_id INTEGER REFERENCES funding_sources(id),
@@ -194,14 +211,12 @@ const migrate = async () => {
       );
     `);
     
-    // Index untuk Soft Delete (Sesuai SQL Local)
     await client.query(`CREATE INDEX IF NOT EXISTS idx_assets_deleted_at ON assets USING btree (deleted_at);`);
 
     // ==========================================
     // 5. TRANSACTIONS
     // ==========================================
 
-    // Tabel: Loans
     console.log("Creating table: loans...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS loans (
@@ -226,7 +241,6 @@ const migrate = async () => {
       );
     `);
 
-    // Tabel: Opname Sessions
     console.log("Creating table: opname_sessions...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS opname_sessions (
@@ -243,7 +257,6 @@ const migrate = async () => {
       );
     `);
 
-    // Tabel: Opname Items
     console.log("Creating table: opname_items...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS opname_items (
@@ -259,7 +272,7 @@ const migrate = async () => {
     `);
 
     await client.query("COMMIT");
-    console.log("✅ MIGRASI SUKSES! Database Production sekarang identik dengan Local.");
+    console.log("✅ MIGRASI SELESAI!");
     
   } catch (err) {
     await client.query("ROLLBACK");
