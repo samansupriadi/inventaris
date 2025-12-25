@@ -5,81 +5,80 @@ const migrate = async () => {
   const client = await pool.connect();
 
   try {
-    console.log("⏳ Memulai Migrasi Database (Laravel Style)...");
+    console.log("⏳ Memulai Migrasi Database (Versi Sinkronisasi Local)...");
     await client.query("BEGIN");
 
     // ==========================================
-    // 1. MASTER DATA (Level Paling Atas)
+    // 1. MASTER DATA
     // ==========================================
     
-    // Tabel: Entities (Entitas/Unit)
+    // Tabel: Entities
     console.log("Creating table: entities...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS entities (
         id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        code VARCHAR(50) UNIQUE,
+        name TEXT NOT NULL,
+        code TEXT UNIQUE,
         description TEXT,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
     `);
 
-    // Tabel: Locations (Lokasi)
+    // Tabel: Locations
     console.log("Creating table: locations...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS locations (
         id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        slug VARCHAR(255) UNIQUE, 
-        code VARCHAR(50) UNIQUE,
+        name TEXT NOT NULL,
+        code TEXT UNIQUE,
+        slug TEXT UNIQUE,
         description TEXT,
         created_at TIMESTAMP DEFAULT NOW()
       );
     `);
 
-    // Tabel: Asset Categories (Kategori Aset)
+    // Tabel: Asset Categories
     console.log("Creating table: asset_categories...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS asset_categories (
         id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        slug VARCHAR(255) UNIQUE,
-        code VARCHAR(50) UNIQUE,
+        name TEXT NOT NULL UNIQUE,
+        code TEXT UNIQUE,
+        slug TEXT UNIQUE,
         description TEXT,
         created_at TIMESTAMP DEFAULT NOW()
       );
     `);
 
-    // Tabel: Funding Sources (Sumber Dana)
+    // Tabel: Funding Sources
     console.log("Creating table: funding_sources...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS funding_sources (
         id SERIAL PRIMARY KEY,
-        entity_id INTEGER REFERENCES entities(id) ON DELETE SET NULL,
-        name VARCHAR(255) NOT NULL,
-        slug VARCHAR(255) UNIQUE,
-        code VARCHAR(50) UNIQUE,
+        entity_id INTEGER REFERENCES entities(id) ON DELETE RESTRICT,
+        name TEXT NOT NULL UNIQUE,
+        code TEXT UNIQUE,
+        slug TEXT UNIQUE,
         description TEXT,
         created_at TIMESTAMP DEFAULT NOW()
       );
     `);
 
-    // Tabel: Budget Codes (Kode Mata Anggaran)
+    // Tabel: Budget Codes
     console.log("Creating table: budget_codes...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS budget_codes (
         id SERIAL PRIMARY KEY,
-        funding_source_id INTEGER REFERENCES funding_sources(id) ON DELETE CASCADE,
-        code VARCHAR(100) NOT NULL,
-        name VARCHAR(255) NOT NULL,
+        funding_source_id INTEGER NOT NULL REFERENCES funding_sources(id) ON DELETE CASCADE,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT NOW(),
         UNIQUE(funding_source_id, code)
       );
     `);
 
     // ==========================================
-    // 2. USER MANAGEMENT & RBAC
+    // 2. USERS & ROLES
     // ==========================================
 
     // Tabel: Users
@@ -88,11 +87,11 @@ const migrate = async () => {
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         entity_id INTEGER REFERENCES entities(id) ON DELETE SET NULL,
-        name VARCHAR(255) NOT NULL,
-        email VARCHAR(255) UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
         phone VARCHAR(50),
-        is_active BOOLEAN DEFAULT TRUE,
+        is_active BOOLEAN DEFAULT TRUE NOT NULL,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW(),
         deleted_at TIMESTAMP
@@ -104,8 +103,8 @@ const migrate = async () => {
     await client.query(`
       CREATE TABLE IF NOT EXISTS roles (
         id SERIAL PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        slug VARCHAR(100) UNIQUE NOT NULL,
+        name TEXT NOT NULL UNIQUE,
+        slug TEXT NOT NULL UNIQUE,
         description TEXT,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
@@ -117,30 +116,30 @@ const migrate = async () => {
     await client.query(`
       CREATE TABLE IF NOT EXISTS permissions (
         id SERIAL PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        slug VARCHAR(100) UNIQUE NOT NULL,
-        group_name VARCHAR(100),
+        name TEXT NOT NULL UNIQUE,
+        slug TEXT NOT NULL UNIQUE,
+        group_name TEXT,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
     `);
 
-    // Tabel Pivot: User Roles
+    // Pivot: User Roles
     console.log("Creating table: user_roles...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS user_roles (
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        role_id INTEGER REFERENCES roles(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
         PRIMARY KEY (user_id, role_id)
       );
     `);
 
-    // Tabel Pivot: Role Permissions
+    // Pivot: Role Permissions
     console.log("Creating table: role_permissions...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS role_permissions (
-        role_id INTEGER REFERENCES roles(id) ON DELETE CASCADE,
-        permission_id INTEGER REFERENCES permissions(id) ON DELETE CASCADE,
+        role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+        permission_id INTEGER NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
         PRIMARY KEY (role_id, permission_id)
       );
     `);
@@ -161,108 +160,106 @@ const migrate = async () => {
     `);
 
     // ==========================================
-    // 4. CORE DATA (ASSETS)
+    // 4. ASSETS (Updated Sesuai SQL Local)
     // ==========================================
     console.log("Creating table: assets...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS assets (
         id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        code VARCHAR(100) UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        code TEXT NOT NULL UNIQUE,
         
-        -- Foreign Keys
-        category_id INTEGER REFERENCES asset_categories(id) ON DELETE SET NULL,
-        location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
-        funding_source_id INTEGER REFERENCES funding_sources(id) ON DELETE SET NULL,
-        budget_code_id INTEGER REFERENCES budget_codes(id) ON DELETE SET NULL,
+        -- DUA KOLOM LOKASI (Agar Backend Lama & Baru Jalan)
+        location TEXT,  -- Kolom Legacy (Penyebab error sebelumnya)
+        location_id INTEGER REFERENCES locations(id), -- Kolom Relasi Baru
+
+        category_id INTEGER REFERENCES asset_categories(id),
+        funding_source_id INTEGER REFERENCES funding_sources(id),
+        budget_code_id INTEGER REFERENCES budget_codes(id),
         import_history_id INTEGER REFERENCES import_histories(id) ON DELETE SET NULL,
 
-        -- Details
-        condition VARCHAR(50), -- baik, rusak, maintenance
-        status VARCHAR(50) DEFAULT 'available', -- available, borrowed, lost
-        value NUMERIC(18, 2) DEFAULT 0,
+        condition TEXT,
+        status TEXT DEFAULT 'available',
+        value NUMERIC(18,2),
         purchase_date DATE,
         
-        -- Files
         photo_url TEXT,
         receipt_url TEXT,
         notes TEXT,
+        sequence_no INTEGER,
         
-        sequence_no INTEGER, -- untuk running number
         created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW(),
-        deleted_at TIMESTAMP -- Soft Delete
+        updated_at TIMESTAMP,
+        deleted_at TIMESTAMP
       );
     `);
+    
+    // Index untuk Soft Delete (Sesuai SQL Local)
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_assets_deleted_at ON assets USING btree (deleted_at);`);
 
     // ==========================================
-    // 5. TRANSACTIONS (LOANS & OPNAME)
+    // 5. TRANSACTIONS
     // ==========================================
 
-    // Tabel: Loans (Peminjaman)
+    // Tabel: Loans
     console.log("Creating table: loans...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS loans (
         id SERIAL PRIMARY KEY,
-        asset_id INTEGER REFERENCES assets(id) ON DELETE CASCADE,
-        borrower_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        asset_id INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+        borrower TEXT NOT NULL,
+        borrower_user_id INTEGER REFERENCES users(id),
         usage_location_id INTEGER REFERENCES locations(id),
         
-        borrower VARCHAR(255), -- Nama peminjam text manual (backup)
         borrowed_at TIMESTAMP DEFAULT NOW(),
         due_date DATE,
         returned_at TIMESTAMP,
         
-        status VARCHAR(50) DEFAULT 'borrowed', -- borrowed, returned
-        
-        condition_before VARCHAR(50),
-        condition_after VARCHAR(50),
-        before_photo_url TEXT,
-        after_photo_url TEXT,
-        
+        status TEXT DEFAULT 'borrowed',
         notes TEXT,
-        notes_return TEXT
+        notes_return TEXT,
+        
+        condition_before TEXT,
+        condition_after TEXT,
+        before_photo_url TEXT,
+        after_photo_url TEXT
       );
     `);
 
-    // Tabel: Opname Sessions (Audit Header)
+    // Tabel: Opname Sessions
     console.log("Creating table: opname_sessions...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS opname_sessions (
         id SERIAL PRIMARY KEY,
         title TEXT NOT NULL,
-        status VARCHAR(50) DEFAULT 'On Progress',
+        status TEXT DEFAULT 'On Progress',
         location_id INTEGER REFERENCES locations(id),
         created_by INTEGER REFERENCES users(id),
         verified_by INTEGER REFERENCES users(id),
-        
         total_assets INTEGER DEFAULT 0,
         scanned_assets INTEGER DEFAULT 0,
-        
         created_at TIMESTAMP DEFAULT NOW(),
         finalized_at TIMESTAMP
       );
     `);
 
-    // Tabel: Opname Items (Audit Detail)
+    // Tabel: Opname Items
     console.log("Creating table: opname_items...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS opname_items (
         id SERIAL PRIMARY KEY,
         opname_session_id INTEGER REFERENCES opname_sessions(id) ON DELETE CASCADE,
         asset_id INTEGER REFERENCES assets(id),
-        
-        status VARCHAR(50) DEFAULT 'Missing', -- Matched, Missing, Unlisted
-        condition_actual VARCHAR(50),
+        status TEXT DEFAULT 'Missing',
+        condition_actual TEXT,
         notes TEXT,
-        
         scanned_at TIMESTAMP,
         updated_at TIMESTAMP DEFAULT NOW()
       );
     `);
 
     await client.query("COMMIT");
-    console.log("✅ MIGRASI SUKSES! Database siap digunakan di Production.");
+    console.log("✅ MIGRASI SUKSES! Database Production sekarang identik dengan Local.");
     
   } catch (err) {
     await client.query("ROLLBACK");
