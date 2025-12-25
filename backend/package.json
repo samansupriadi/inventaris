@@ -7,8 +7,8 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "migrate": "node migrate.js",
-    "migrate:fresh": "node migrate.js --fresh",     
-    "seed": "node seed.js",             
+    "migrate:fresh": "node migrate.js --fresh",
+    "seed": "node seed.js",
     "seed:fresh": "node seed.js --fresh"
   },
   "keywords": [],
