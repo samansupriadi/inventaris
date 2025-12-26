@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:latest
+    image: postgres:18.1-alpine3.23
     container_name: inventaris_db
     restart: always
     environment:
