@@ -9,7 +9,11 @@
     "migrate": "node migrate.js",
     "migrate:fresh": "node migrate.js --fresh",
     "seed": "node seed.js",
-    "seed:fresh": "node seed.js --fresh"
+    "seed:fresh": "node seed.js --fresh",
+    "migrate:create": "node-pg-migrate create",  
+    "migrate:up": "node-pg-migrate up",         
+    "migrate:down": "node-pg-migrate down",     
+    "migrate:redo": "node-pg-migrate redo"
   },
   "keywords": [],
   "author": "",
@@ -26,6 +30,7 @@
     "html5-qrcode": "^2.3.8",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
+    "node-pg-migrate": "^8.0.4",
     "pg": "^8.16.3",
     "xlsx": "^0.18.5"
   }
