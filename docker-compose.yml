@@ -27,7 +27,9 @@ services:
       DB_NAME: ${DB_NAME}
       JWT_SECRET: ${JWT_SECRET}
     networks:
-      - app-internal 
+      - app-internal
+    volumes:
+      - static_data:/app/uploads
 
   frontend:
     build: ./frontend
@@ -43,13 +45,15 @@ services:
       - CLIENT_MAX_BODY_SIZE=10M
     networks:
       - app-internal 
-      - proxy        
+      - proxy
+    volumes:
+      - static_data:/usr/share/nginx/html/uploads    
 
 volumes:
   pgdatanew:
+  static_data:
 
 networks:
   app-internal: 
-
   proxy:
     external: true
