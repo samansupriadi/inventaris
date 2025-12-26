@@ -2,6 +2,8 @@
 import QRCode from "react-qr-code";
 import { API_BASE_URL } from "../api";
 import { useState } from "react";
+// IMPORT UTILITY UNTUK MENGHITUNG PENYUSUTAN
+import { calculateBookValue, formatRupiah } from "../utils/depreciation";
 
 function AssetDetailModal({
   asset,
@@ -15,11 +17,12 @@ function AssetDetailModal({
 
   if (!asset) return null;
 
-  // Filter history khusus aset ini
+  // 1. Filter & Sort History Peminjaman
   const assetLoans = loans
     .filter((l) => l.asset_id === asset.id)
-    .sort((a, b) => new Date(b.borrowed_at) - new Date(a.borrowed_at)); // Urutkan terbaru
+    .sort((a, b) => new Date(b.borrowed_at) - new Date(a.borrowed_at)); // Terbaru di atas
 
+  // 2. Lookup Data Master (Funding, Location, Category)
   const funding = asset.funding_source_id
     ? fundingSources.find((f) => f.id === asset.funding_source_id)
     : null;
@@ -32,36 +35,32 @@ function AssetDetailModal({
     ? categories?.find((c) => c.id === asset.category_id)
     : null;
 
-  const formatCurrency = (num) => {
-    if (num === null || num === undefined) return "-";
-    const n = Number(num);
-    if (Number.isNaN(n)) return "-";
-    return n.toLocaleString("id-ID");
-  };
-
+  // 3. Helper URL Gambar
   const fullUrl = (path) => {
     if (!path) return null;
     if (path.startsWith("http")) return path;
     return `${API_BASE_URL}${path}`;
   };
 
-  // ==== PIC Terakhir ====
+  // 4. Cari PIC Terakhir
   let lastBorrower = asset.last_borrower || "-";
   if (!asset.last_borrower && assetLoans.length > 0) {
     lastBorrower = assetLoans[0].borrower || "-";
   }
 
-  // ==== QR Payload ====
+  // 5. Data untuk QR Code
   const buildQrPayload = () => {
     return [
       `Nama: ${asset.name}`,
       `Kode: ${asset.code}`,
       `Kondisi: ${asset.condition || "-"}`,
       `Status: ${asset.status || "-"}`,
-      `Sumber Dana: ${funding ? funding.name : "-"}`,
       `PIC: ${lastBorrower}`,
     ].join("\n");
   };
+
+  // 6. HITUNG NILAI BUKU SAAT INI (DEPRESIASI)
+  const currentBookValue = calculateBookValue(asset);
 
   return (
     <div
@@ -96,12 +95,15 @@ function AssetDetailModal({
             
             {/* KOLOM KIRI: INFO TEKS */}
             <div className="lg:col-span-2 space-y-6">
+              
+              {/* Box Info Utama */}
               <div className="bg-slate-50 p-5 rounded-xl border border-slate-100">
                 <h3 className="text-lg font-bold text-slate-800 mb-4 border-b border-slate-200 pb-2">
                   {asset.name}
                 </h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-8 text-sm">
+                  {/* Baris 1 */}
                   <div>
                     <span className="block text-xs text-slate-400 mb-1">Kategori</span>
                     <span className="font-medium text-slate-700">
@@ -112,6 +114,8 @@ function AssetDetailModal({
                     <span className="block text-xs text-slate-400 mb-1">Sumber Dana</span>
                     <span className="font-medium text-slate-700">{funding?.name || "-"}</span>
                   </div>
+                  
+                  {/* Baris 2 */}
                   <div>
                     <span className="block text-xs text-slate-400 mb-1">Lokasi Induk</span>
                     <span className="font-medium text-slate-700">{locationMaster?.name || "-"}</span>
@@ -120,15 +124,47 @@ function AssetDetailModal({
                     <span className="block text-xs text-slate-400 mb-1">Detail Lokasi</span>
                     <span className="font-medium text-slate-700">{asset.location || "-"}</span>
                   </div>
-                  <div>
-                    <span className="block text-xs text-slate-400 mb-1">Nilai Aset</span>
-                    <span className="font-medium text-slate-700">Rp {formatCurrency(asset.value)}</span>
-                  </div>
+
+                  {/* Baris 3 */}
                   <div>
                     <span className="block text-xs text-slate-400 mb-1">PIC Terakhir</span>
                     <span className="font-medium text-slate-700">{lastBorrower}</span>
                   </div>
+                  <div>
+                    <span className="block text-xs text-slate-400 mb-1">Tanggal Pembelian</span>
+                    <span className="font-medium text-slate-700">
+                        {asset.purchase_date ? new Date(asset.purchase_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : "-"}
+                    </span>
+                  </div>
                 </div>
+
+                {/* === BOX SPESIAL: NILAI & PENYUSUTAN === */}
+                <div className="mt-5 bg-white p-4 rounded-lg border border-slate-200 shadow-sm relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-[#009846]"></div>
+                    <h4 className="text-xs font-bold text-slate-500 uppercase mb-3 tracking-wider">Informasi Nilai Aset</h4>
+                    
+                    <div className="grid grid-cols-2 gap-6">
+                        <div>
+                            <span className="block text-[10px] text-slate-400 uppercase">Harga Perolehan (Beli)</span>
+                            <span className="text-base font-semibold text-slate-700">
+                                {formatRupiah(asset.value)}
+                            </span>
+                        </div>
+                        <div>
+                            <span className="block text-[10px] text-slate-400 uppercase">Nilai Buku Saat Ini</span>
+                            <span className="text-lg font-bold text-[#009846]">
+                                {formatRupiah(currentBookValue)}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div className="mt-3 pt-3 border-t border-slate-100 flex gap-6 text-xs text-slate-500">
+                        <span>Umur Ekonomis: <strong>{asset.useful_life || 0} Tahun</strong></span>
+                        <span>Nilai Residu: <strong>{formatRupiah(asset.residual_value)}</strong></span>
+                    </div>
+                </div>
+                {/* === END BOX SPESIAL === */}
+
               </div>
 
               {/* Status & Kondisi Badges */}
@@ -151,13 +187,22 @@ function AssetDetailModal({
                   </span>
                 </div>
               </div>
+              
+              {/* Catatan */}
+              {asset.notes && (
+                  <div className="bg-yellow-50 border border-yellow-100 p-3 rounded-lg text-sm text-yellow-800">
+                      <span className="font-bold block text-xs uppercase mb-1">Catatan:</span>
+                      {asset.notes}
+                  </div>
+              )}
             </div>
 
             {/* KOLOM KANAN: MEDIA (Foto, Kwitansi, QR) */}
             <div className="space-y-4">
+              
               {/* Foto Aset */}
               <div 
-                className="group relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50 h-40 cursor-pointer shadow-sm hover:shadow-md transition-all"
+                className="group relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50 h-48 cursor-pointer shadow-sm hover:shadow-md transition-all"
                 onClick={() => asset.photo_url && setPreviewImage(fullUrl(asset.photo_url))}
               >
                 {asset.photo_url ? (
@@ -169,11 +214,11 @@ function AssetDetailModal({
                   </>
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">
-                    <span className="text-2xl">📷</span>
+                    <span className="text-3xl">📷</span>
                     <span className="text-xs mt-1">No Image</span>
                   </div>
                 )}
-                <div className="absolute bottom-0 left-0 right-0 bg-white/80 backdrop-blur-sm p-1 text-[10px] text-center font-medium text-slate-600 border-t border-slate-100">
+                <div className="absolute bottom-0 left-0 right-0 bg-white/80 backdrop-blur-sm p-1.5 text-[10px] text-center font-medium text-slate-600 border-t border-slate-100">
                   Foto Aset
                 </div>
               </div>
@@ -205,12 +250,7 @@ function AssetDetailModal({
                 {/* QR Code */}
                 <div 
                   className="rounded-xl border border-slate-200 bg-white h-32 flex flex-col items-center justify-center p-2 cursor-pointer hover:border-[#009846] transition-colors shadow-sm"
-                  onClick={() => {
-                    // Generate QR data URL untuk preview (agak tricky, jadi kita preview simple text atau alert)
-                    // Atau render ulang QR di modal preview. 
-                    // Simpelnya: Kita tampilkan QR di tengah layar kalau diklik.
-                    setPreviewImage("QR"); // Flag khusus
-                  }}
+                  onClick={() => setPreviewImage("QR")} // Flag khusus untuk QR
                 >
                   <QRCode value={buildQrPayload()} size={64} className="mb-1" />
                   <span className="text-[10px] text-[#009846] font-medium">Klik utk Zoom</span>
@@ -220,13 +260,13 @@ function AssetDetailModal({
           </div>
 
           {/* SECTION 2: TABEL RIWAYAT (Scrollable Container) */}
-          <div className="mt-8">
+          <div className="mt-8 pt-6 border-t border-slate-100">
             <h4 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
               <span className="w-1 h-4 bg-[#009846] rounded-full"></span>
               Riwayat Peminjaman & Pengembalian
             </h4>
 
-            {/* WRAPPER TABEL: KUNCI UNTUK DATA BANYAK */}
+            {/* WRAPPER TABEL */}
             <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
               <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
                 <table className="w-full text-xs text-left">
@@ -262,12 +302,10 @@ function AssetDetailModal({
                             }
                           </td>
                           
-                          {/* CATATAN PINJAM */}
                           <td className="p-3 text-slate-600 max-w-[150px] truncate" title={loan.notes}>
                             {loan.notes || "-"}
                           </td>
 
-                          {/* CATATAN KEMBALI */}
                           <td className="p-3 text-slate-600 max-w-[150px] truncate" title={loan.notes_return}>
                             {loan.notes_return || "-"}
                           </td>
@@ -320,7 +358,7 @@ function AssetDetailModal({
               </div>
             </div>
             <p className="text-[10px] text-slate-400 mt-2 text-right">
-              * Menampilkan maksimal 200 riwayat terakhir.
+              * Menampilkan riwayat transaksi peminjaman.
             </p>
           </div>
 
