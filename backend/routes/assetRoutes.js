@@ -2,6 +2,8 @@
 import express from "express";
 import pool from "../db.js";
 import { upload } from "../upload.js";
+// 1. IMPORT LOGGER (CCTV KITA)
+import { logActivity } from "../utils/logger.js";
 
 const router = express.Router();
 
@@ -11,7 +13,7 @@ const parseNumber = (val) => {
   return isNaN(num) ? 0 : num;
 };
 
-// GET /api/assets
+// GET /api/assets (Tidak perlu dicatat karena cuma baca)
 router.get("/", async (req, res) => {
   const { entity_id, include_deleted } = req.query;
 
@@ -28,7 +30,6 @@ router.get("/", async (req, res) => {
     const params = [];
     const where = [];
 
-    // Filter Soft Delete
     if (include_deleted !== "true") {
       where.push(`a.deleted_at IS NULL`);
     }
@@ -50,7 +51,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-// POST /api/assets (TAMBAH ASET - SMART FALLBACK)
+// POST /api/assets (TAMBAH ASET - DENGAN CCTV)
 router.post("/", async (req, res) => {
   const {
     name, location, location_id, condition, funding_source_id,
@@ -70,23 +71,21 @@ router.post("/", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // 1. Cek Sumber Dana
+    // 1. Cek Sumber Dana & Kategori
     const fsRes = await client.query(`SELECT code FROM funding_sources WHERE id = $1`, [funding_source_id]);
     if (fsRes.rowCount === 0) throw new Error("Sumber dana tidak valid");
     const fsCode = fsRes.rows[0].code;
 
-    // 2. Cek Kategori & AMBIL DEFAULT USEFUL LIFE (Ini Logic Penting!)
     const catRes = await client.query(`SELECT code, useful_life FROM asset_categories WHERE id = $1`, [category_id]);
     if (catRes.rowCount === 0) throw new Error("Kategori aset tidak valid");
     
     const catCode = catRes.rows[0].code;
-    const catDefaultLife = parseNumber(catRes.rows[0].useful_life); // Ambil default dari DB
+    const catDefaultLife = parseNumber(catRes.rows[0].useful_life); 
 
-    // LOGIC: Jika input user kosong/0, pakai default kategori. Jika user isi, pakai input user.
     const inputLife = parseNumber(useful_life);
     const finalUsefulLife = inputLife > 0 ? inputLife : catDefaultLife;
 
-    // 3. Generate Nomor Urut
+    // 2. Generate Nomor Urut
     const seqRes = await client.query(
       `SELECT COALESCE(MAX(sequence_no), 0) + 1 AS next_seq 
        FROM assets WHERE funding_source_id = $1 AND category_id = $2`,
@@ -94,13 +93,12 @@ router.post("/", async (req, res) => {
     );
     const seq = seqRes.rows[0].next_seq || 1;
     
-    // Format Kode: 0001/FS-CAT/MM-YYYY
     const d = new Date(purchaseDateStr);
     const monthStr = String(d.getMonth() + 1).padStart(2, "0");
     const yearStr = d.getFullYear();
     const generatedCode = `${String(seq).padStart(4, "0")}/${fsCode}-${catCode}/${monthStr}-${yearStr}`;
 
-    // 4. Insert Data
+    // 3. Insert Data
     const insertRes = await client.query(
       `INSERT INTO assets
         (name, code, location, location_id, condition, status,
@@ -114,24 +112,27 @@ router.post("/", async (req, res) => {
          $12, $13, $14)
        RETURNING *`,
       [
-        name.trim(),
-        generatedCode,
-        location ? location.trim() : null,
-        location_id || null,
-        condition || 'baik',
-        funding_source_id,
-        category_id,
-        budget_code_id || null,
-        notes ? notes.trim() : null,
-        purchaseDateStr,
-        seq,
-        parseNumber(value),
-        finalUsefulLife,       // <--- Pakai nilai hasil logic di atas
-        parseNumber(residual_value)
+        name.trim(), generatedCode, location ? location.trim() : null, location_id || null, condition || 'baik',
+        funding_source_id, category_id, budget_code_id || null, notes ? notes.trim() : null,
+        purchaseDateStr, seq, parseNumber(value), finalUsefulLife, parseNumber(residual_value)
       ]
     );
 
     await client.query("COMMIT");
+
+    // === 🎥 CCTV: REKAM JEJAK CREATE ===
+    await logActivity(req, {
+        action: "CREATE",
+        entity_type: "ASSET",
+        entity_id: insertRes.rows[0].id,
+        details: { 
+            name: insertRes.rows[0].name, 
+            code: insertRes.rows[0].code,
+            value: insertRes.rows[0].value 
+        }
+    });
+    // ===================================
+
     res.status(201).json(insertRes.rows[0]);
 
   } catch (err) {
@@ -143,7 +144,7 @@ router.post("/", async (req, res) => {
   }
 });
 
-// PUT /api/assets/:id (EDIT ASET)
+// PUT /api/assets/:id (EDIT ASET - DENGAN CCTV)
 router.put("/:id", async (req, res) => {
   const id = req.params.id;
   const {
@@ -156,43 +157,36 @@ router.put("/:id", async (req, res) => {
   if (!name || name.trim() === "") return res.status(400).json({ message: "Nama aset wajib diisi" });
 
   try {
+    // Ambil data lama dulu buat perbandingan (Optional tapi bagus buat audit)
+    // const oldData = await pool.query("SELECT * FROM assets WHERE id = $1", [id]);
+
     const result = await pool.query(
       `UPDATE assets
-       SET name = $1,
-           location = $2,
-           location_id = $3,
-           condition = $4,
-           status = COALESCE($5, status),
-           funding_source_id = $6,
-           category_id = $7,
-           budget_code_id = $8,
-           notes = $9,
-           purchase_date = $10,
-           value = $11,
-           useful_life = $12,
-           residual_value = $13,
-           updated_at = NOW()
+       SET name = $1, location = $2, location_id = $3, condition = $4, status = COALESCE($5, status),
+           funding_source_id = $6, category_id = $7, budget_code_id = $8, notes = $9, purchase_date = $10,
+           value = $11, useful_life = $12, residual_value = $13, updated_at = NOW()
        WHERE id = $14 AND deleted_at IS NULL
        RETURNING *`,
       [
-        name.trim(),
-        location ? location.trim() : null,
-        location_id || null,
-        condition || null,
-        status || null,
-        funding_source_id || null,
-        category_id || null,
-        budget_code_id || null,
-        notes ? notes.trim() : null,
-        purchase_date || null,
-        parseNumber(value),
-        parseNumber(useful_life), // Kalau edit, kita percaya input user apa adanya
-        parseNumber(residual_value),
-        id
+        name.trim(), location ? location.trim() : null, location_id || null, condition || null, status || null,
+        funding_source_id || null, category_id || null, budget_code_id || null, notes ? notes.trim() : null, purchase_date || null,
+        parseNumber(value), parseNumber(useful_life), parseNumber(residual_value), id
       ]
     );
 
     if (result.rowCount === 0) return res.status(404).json({ message: "Aset tidak ditemukan" });
+
+    // === 🎥 CCTV: REKAM JEJAK UPDATE ===
+    await logActivity(req, {
+        action: "UPDATE",
+        entity_type: "ASSET",
+        entity_id: id,
+        details: { 
+            changes: req.body // Simpan apa yang diubah
+        }
+    });
+    // ===================================
+
     res.json(result.rows[0]);
 
   } catch (err) {
@@ -201,45 +195,100 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// Upload Routes & Delete/Restore Routes (Sama seperti sebelumnya, aman)
+// POST /api/assets/:id/photo (DENGAN CCTV)
 router.post("/:id/photo", upload.single("photo"), async (req, res) => {
   const assetId = req.params.id;
   if (!req.file) return res.status(400).json({ message: "File foto wajib diupload" });
   const relativePath = `/uploads/${req.file.filename}`;
+
   try {
     const result = await pool.query(`UPDATE assets SET photo_url = $1 WHERE id = $2 RETURNING id, photo_url`, [relativePath, assetId]);
     if (result.rowCount === 0) return res.status(404).json({ message: "Aset tidak ditemukan" });
+
+    // === 🎥 CCTV: REKAM JEJAK UPLOAD FOTO ===
+    await logActivity(req, {
+        action: "UPDATE_PHOTO",
+        entity_type: "ASSET",
+        entity_id: assetId,
+        details: { filename: req.file.filename }
+    });
+    // ========================================
+
     res.json(result.rows[0]);
-  } catch (err) { res.status(500).json({ message: "Gagal menyimpan foto" }); }
+  } catch (err) {
+    console.error("[UPLOAD_PHOTO_ERROR]", err);
+    res.status(500).json({ message: "Gagal menyimpan foto" });
+  }
 });
 
+// POST /api/assets/:id/receipt (DENGAN CCTV)
 router.post("/:id/receipt", upload.single("receipt"), async (req, res) => {
   const assetId = req.params.id;
   if (!req.file) return res.status(400).json({ message: "File kwitansi wajib diupload" });
   const relativePath = `/uploads/${req.file.filename}`;
+
   try {
     const result = await pool.query(`UPDATE assets SET receipt_url = $1 WHERE id = $2 RETURNING id, receipt_url`, [relativePath, assetId]);
     if (result.rowCount === 0) return res.status(404).json({ message: "Aset tidak ditemukan" });
+
+    // === 🎥 CCTV: REKAM JEJAK UPLOAD KWITANSI ===
+    await logActivity(req, {
+        action: "UPDATE_RECEIPT",
+        entity_type: "ASSET",
+        entity_id: assetId,
+        details: { filename: req.file.filename }
+    });
+    // ===========================================
+
     res.json(result.rows[0]);
-  } catch (err) { res.status(500).json({ message: "Gagal menyimpan kwitansi" }); }
+  } catch (err) {
+    console.error("[UPLOAD_RECEIPT_ERROR]", err);
+    res.status(500).json({ message: "Gagal menyimpan kwitansi" });
+  }
 });
 
+// DELETE (Soft Delete - DENGAN CCTV)
 router.delete("/:id", async (req, res) => {
   const id = req.params.id;
   try {
     const result = await pool.query(`UPDATE assets SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING id`, [id]);
     if (result.rowCount === 0) return res.status(404).json({ message: "Aset tidak ditemukan" });
+
+    // === 🎥 CCTV: REKAM JEJAK DELETE ===
+    await logActivity(req, {
+        action: "DELETE",
+        entity_type: "ASSET",
+        entity_id: id,
+        details: { reason: "Soft delete via API" }
+    });
+    // ===================================
+
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ message: "Gagal menghapus aset" }); }
+  } catch (err) {
+    res.status(500).json({ message: "Gagal menghapus aset" });
+  }
 });
 
+// RESTORE (DENGAN CCTV)
 router.post("/:id/restore", async (req, res) => {
   const id = req.params.id;
   try {
     const result = await pool.query(`UPDATE assets SET deleted_at = NULL WHERE id = $1 AND deleted_at IS NOT NULL RETURNING id`, [id]);
     if (result.rowCount === 0) return res.status(404).json({ message: "Aset tidak ditemukan" });
+
+    // === 🎥 CCTV: REKAM JEJAK RESTORE ===
+    await logActivity(req, {
+        action: "RESTORE",
+        entity_type: "ASSET",
+        entity_id: id,
+        details: { reason: "Restore via API" }
+    });
+    // ====================================
+
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ message: "Gagal restore aset" }); }
+  } catch (err) {
+    res.status(500).json({ message: "Gagal restore aset" });
+  }
 });
 
 export default router;

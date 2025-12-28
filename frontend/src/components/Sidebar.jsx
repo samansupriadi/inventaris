@@ -1,6 +1,7 @@
 // src/components/Sidebar.jsx
 import { hasPermission, getUser } from "../utils/auth"; // Helper Security
 
+
 function Sidebar({ activeMenu, onChange, className = "" }) {
   // Ambil data user untuk ditampilkan di footer sidebar
   const user = getUser(); 
@@ -31,6 +32,7 @@ function Sidebar({ activeMenu, onChange, className = "" }) {
         { id: "roles", label: "Roles & Hak Akses", icon: "🛡️", permission: "view_roles" },
         { id: "permissions", label: "Permission List", icon: "🔐", permission: "view_permissions" },
         { id: "import", label: "Import Data", icon: "📥", permission: "import_data" },
+        { id: "audit-logs", label: "Audit Logs", icon: "📜", permission: null },
       ]
     }
   ];

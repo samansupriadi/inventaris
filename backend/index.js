@@ -6,7 +6,7 @@ import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { uploadsDir } from "./upload.js";
 
-// --- IMPORT LIMITER DARI FILE BARU ---
+// --- IMPORT LIMITER ---
 import { globalLimiter } from "./middleware/limiter.js";
 
 // routers
@@ -24,6 +24,7 @@ import entityRouter from "./routes/entityRoutes.js";
 import permissionRouter from "./routes/permissionRoutes.js";
 import importRoutes from "./routes/importRoutes.js";
 import opnameRoutes from "./routes/opnameRoutes.js";
+import auditRoutes from "./routes/auditRoutes.js";
 
 dotenv.config();
 
@@ -33,9 +34,27 @@ const port = process.env.PORT || 4000;
 // 1. SECURITY HEADERS
 app.use(helmet());
 
-// 2. CORS CONFIG
+// 2. CORS CONFIG (UPDATED: MULTI ORIGIN)
+// Daftar URL Frontend yang boleh akses Backend ini
+const allowedOrigins = [
+  "http://localhost:5173",      // Frontend Localhost Utama
+  "http://127.0.0.1:5173",      // IP Loopback (kadang browser pakai ini)
+  // "http://192.168.1.XX:5173", // Tambahkan IP LAN jika mau tes di HP satu WiFi
+  // "https://aset.sinergifoundation.org" // Tambahkan Domain Production nanti
+];
+
 app.use(cors({
-  origin: "http://localhost:5173", 
+  origin: function (origin, callback) {
+    // allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // Cek apakah origin ada di daftar putih kita?
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE"],
   allowedHeaders: ["Content-Type", "Authorization"]
@@ -46,17 +65,14 @@ app.use(cookieParser());
 app.use(express.json());
 
 // 4. GLOBAL RATE LIMITER
-// (Definisi manual dihapus, langsung pakai yang di-import)
 app.use(globalLimiter);
 
-// static uploads
+// static uploads (Cross-Origin Resource Policy diperbolehkan)
 app.use("/uploads", express.static(uploadsDir, {
   setHeaders: (res) => {
     res.set("Cross-Origin-Resource-Policy", "cross-origin");
   }
 }));
-
-
 
 // routes
 app.use("/api/health", healthRouter);
@@ -73,6 +89,7 @@ app.use("/api/entities", entityRouter);
 app.use("/api/permissions", permissionRouter);
 app.use("/api/import", importRoutes);
 app.use("/api/opname", opnameRoutes);
+app.use("/api/audit-logs", auditRoutes);
 
 // listen
 app.listen(port, () => {

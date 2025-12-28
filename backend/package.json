@@ -7,13 +7,15 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "migrate": "node migrate.js",
-    "migrate:fresh": "node migrate.js --fresh",
     "seed": "node seed.js",
     "seed:fresh": "node seed.js --fresh",
     "migrate:create": "node-pg-migrate create",  
     "migrate:up": "node-pg-migrate up",         
     "migrate:down": "node-pg-migrate down",     
-    "migrate:redo": "node-pg-migrate redo"
+    "migrate:redo": "node-pg-migrate redo",
+    "db:wipe": "node reset-db.js",
+    "migrate:fresh": "npm run db:wipe && npm run migrate:up",
+    "migrate:fresh:seed": "npm run migrate:fresh && npm run seed"
   },
   "keywords": [],
   "author": "",
