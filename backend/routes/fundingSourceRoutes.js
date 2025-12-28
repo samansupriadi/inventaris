@@ -9,22 +9,42 @@ router.get("/", async (req, res) => {
   const { entity_id } = req.query;
 
   try {
-    let result;
+    // KITA GUNAKAN QUERY CANGGIH DI SINI
+    // Menggunakan json_agg untuk menyatukan KMA ke dalam Sumber Dana
+    let query = `
+      SELECT 
+        fs.id, 
+        fs.name, 
+        fs.code, 
+        fs.description, 
+        fs.entity_id, 
+        fs.created_at,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', bc.id,
+              'code', bc.code,
+              'name', bc.name
+            ) ORDER BY bc.code ASC
+          ) FILTER (WHERE bc.id IS NOT NULL), 
+          '[]'
+        ) as budget_codes
+      FROM funding_sources fs
+      LEFT JOIN budget_codes bc ON fs.id = bc.funding_source_id
+    `;
+
+    const params = [];
+
+    // Filter by Entity ID jika ada parameter
     if (entity_id) {
-      result = await pool.query(
-        `SELECT id, name, code, description, entity_id, created_at
-         FROM funding_sources
-         WHERE entity_id = $1
-         ORDER BY name ASC`,
-        [entity_id]
-      );
-    } else {
-      result = await pool.query(
-        `SELECT id, name, code, description, entity_id, created_at
-         FROM funding_sources
-         ORDER BY name ASC`
-      );
+      query += ` WHERE fs.entity_id = $1`;
+      params.push(entity_id);
     }
+
+    // Wajib Group By jika pakai json_agg
+    query += ` GROUP BY fs.id ORDER BY fs.name ASC`;
+
+    const result = await pool.query(query, params);
 
     res.json(result.rows);
   } catch (err) {
@@ -32,7 +52,6 @@ router.get("/", async (req, res) => {
     res.status(500).json({ message: "Gagal mengambil daftar sumber dana" });
   }
 });
-
 // POST /api/funding-sources
 router.post("/", async (req, res) => {
   const { name, code, description, entity_id } = req.body;

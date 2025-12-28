@@ -25,6 +25,7 @@ import permissionRouter from "./routes/permissionRoutes.js";
 import importRoutes from "./routes/importRoutes.js";
 import opnameRoutes from "./routes/opnameRoutes.js";
 import auditRoutes from "./routes/auditRoutes.js";
+import reportRouter from "./routes/reportRoutes.js";
 
 dotenv.config();
 
@@ -90,7 +91,7 @@ app.use("/api/permissions", permissionRouter);
 app.use("/api/import", importRoutes);
 app.use("/api/opname", opnameRoutes);
 app.use("/api/audit-logs", auditRoutes);
-
+app.use("/api/reports", reportRouter);
 // listen
 app.listen(port, () => {
   console.log(`API server running on port ${port}`);
