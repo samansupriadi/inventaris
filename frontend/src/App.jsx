@@ -65,6 +65,7 @@ import BorrowAssetModal from "./components/BorrowAssetModal";
 import ReturnAssetModal from "./components/ReturnAssetModal";
 import ImportPage from "./components/ImportPage";
 import StockOpnamePage from "./components/StockOpnamePage"; 
+import ReportPage from "./pages/ReportPage";
 
 function App() {
   // STATE DATA UTAMA
@@ -607,6 +608,7 @@ function App() {
           case 'roles': return "Roles & Hak Akses";
           case 'users': return "Manajemen Pengguna";
           case 'permissions': return "System Permissions";
+          case 'reports': return "Pusat Laporan";
           default: return "Sinergi Foundation Inventaris";
       }
   };
@@ -805,6 +807,10 @@ function App() {
                 
                 {activeMenu === "opname" && (
                   <StockOpnamePage />
+                )}
+
+                {activeMenu === "reports" && (
+                  <ReportPage />
                 )}
               </>
             )}

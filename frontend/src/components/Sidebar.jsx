@@ -13,6 +13,7 @@ function Sidebar({ activeMenu, onChange, className = "" }) {
       items: [
         { id: "dashboard", label: "Dashboard", icon: "📊", permission: null }, // null = Semua bisa akses
         { id: "assets", label: "Aset & Inventaris", icon: "📦", permission: "view_assets" },
+        { id: "reports", label: "Pusat Laporan", icon: "🖨️", permission: null },
       ]
     },
     {
