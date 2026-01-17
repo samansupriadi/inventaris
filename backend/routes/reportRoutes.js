@@ -1,20 +1,20 @@
 // backend/routes/reportRoutes.js
 import express from "express";
 import pool from "../db.js";
-import { verifyToken } from "../middleware/authMiddleware.js";
+// 👇 Import authorize
+import { verifyToken, authorize } from "../middleware/authMiddleware.js";
 import { calculateBookValue } from "../utils/depreciation.js";
 
 const router = express.Router();
 
+// Pasang Satpam Global
 router.use(verifyToken);
 
-router.get("/summary", async (req, res) => {
+// 👇 Gembok endpoint ini dengan 'view_reports'
+router.get("/summary", authorize("view_reports"), async (req, res) => {
   try {
-    // TAMBAHKAN funding_source_id dan budget_code_id
     const { category_id, condition, status, start_date, end_date, funding_source_id, budget_code_id, location_id } = req.query;
 
-    // 1. Update Query: Join ke Funding & Budget Code agar namanya bisa diambil (opsional)
-    // Dan tambahkan filtering logic
     let query = `
       SELECT a.id, a.name, a.code, a.value, a.useful_life, a.residual_value, a.purchase_date,
              c.name as category_name, a.location, a.condition, a.status,
@@ -56,19 +56,19 @@ router.get("/summary", async (req, res) => {
       whereClauses.push(`a.purchase_date <= $${params.length}`);
     }
 
-    // === FILTER BARU: SUMBER DANA ===
+    // Filter Sumber Dana
     if (funding_source_id) {
         params.push(funding_source_id);
         whereClauses.push(`a.funding_source_id = $${params.length}`);
     }
 
-    // === FILTER BARU: KMA (Budget Code) ===
+    // Filter KMA
     if (budget_code_id) {
         params.push(budget_code_id);
         whereClauses.push(`a.budget_code_id = $${params.length}`);
     }
     
-    // === FILTER BARU: LOKASI ===
+    // Filter Lokasi
     if (location_id) {
         params.push(location_id);
         whereClauses.push(`a.location_id = $${params.length}`);
@@ -80,11 +80,9 @@ router.get("/summary", async (req, res) => {
 
     query += ` ORDER BY a.purchase_date DESC`;
 
-    // 2. Eksekusi Query
     const result = await pool.query(query, params);
     const assets = result.rows;
 
-    // 3. Hitung Agregat
     let totalAcquisition = 0;
     let totalBookValue = 0;
 
