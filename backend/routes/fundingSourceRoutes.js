@@ -1,16 +1,18 @@
 // routes/fundingSourceRoutes.js
 import express from "express";
 import pool from "../db.js";
+import { verifyToken, authorize } from "../middleware/authMiddleware.js"; // 👈 Import Middleware
 
 const router = express.Router();
 
-// GET /api/funding-sources?entity_id=...
-router.get("/", async (req, res) => {
+// Pasang Satpam Global
+router.use(verifyToken);
+
+// GET -> Butuh manage_funding_sources
+router.get("/", authorize("manage_funding_sources"), async (req, res) => {
   const { entity_id } = req.query;
 
   try {
-    // KITA GUNAKAN QUERY CANGGIH DI SINI
-    // Menggunakan json_agg untuk menyatukan KMA ke dalam Sumber Dana
     let query = `
       SELECT 
         fs.id, 
@@ -35,31 +37,27 @@ router.get("/", async (req, res) => {
 
     const params = [];
 
-    // Filter by Entity ID jika ada parameter
     if (entity_id) {
       query += ` WHERE fs.entity_id = $1`;
       params.push(entity_id);
     }
 
-    // Wajib Group By jika pakai json_agg
     query += ` GROUP BY fs.id ORDER BY fs.name ASC`;
 
     const result = await pool.query(query, params);
-
     res.json(result.rows);
   } catch (err) {
     console.error("Error GET /api/funding-sources:", err);
     res.status(500).json({ message: "Gagal mengambil daftar sumber dana" });
   }
 });
-// POST /api/funding-sources
-router.post("/", async (req, res) => {
+
+// POST -> Butuh manage_funding_sources
+router.post("/", authorize("manage_funding_sources"), async (req, res) => {
   const { name, code, description, entity_id } = req.body;
 
   if (!name || !code || !entity_id) {
-    return res.status(400).json({
-      message: "Nama, kode, dan entitas sumber dana wajib diisi",
-    });
+    return res.status(400).json({ message: "Nama, kode, dan entitas sumber dana wajib diisi" });
   }
 
   try {
@@ -72,44 +70,30 @@ router.post("/", async (req, res) => {
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error("POST /api/funding-sources error:", err);
-
-    if (err.code === "23505") {
-      return res
-        .status(409)
-        .json({ message: "Kode sumber dana sudah digunakan" });
-    }
-
+    if (err.code === "23505") return res.status(409).json({ message: "Kode sumber dana sudah digunakan" });
     res.status(500).json({ message: "Gagal membuat sumber dana" });
   }
 });
 
-// PUT /api/funding-sources/:id
-router.put("/:id", async (req, res) => {
+// PUT -> Butuh manage_funding_sources
+router.put("/:id", authorize("manage_funding_sources"), async (req, res) => {
   const id = req.params.id;
   const { name, code, description, entity_id } = req.body;
 
   if (!name || !code || !entity_id) {
-    return res.status(400).json({
-      message: "Nama, kode, dan entitas sumber dana wajib diisi",
-    });
+    return res.status(400).json({ message: "Nama, kode, dan entitas sumber dana wajib diisi" });
   }
 
   try {
     const result = await pool.query(
       `UPDATE funding_sources
-       SET name = $1,
-           code = $2,
-           description = $3,
-           entity_id = $4
+       SET name = $1, code = $2, description = $3, entity_id = $4
        WHERE id = $5
        RETURNING id, name, code, description, entity_id, created_at`,
       [name, code, description || null, entity_id, id]
     );
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ message: "Sumber dana tidak ditemukan" });
-    }
-
+    if (result.rowCount === 0) return res.status(404).json({ message: "Sumber dana tidak ditemukan" });
     res.json(result.rows[0]);
   } catch (err) {
     console.error("Error PUT /api/funding-sources/:id:", err);
@@ -117,38 +101,21 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// DELETE /api/funding-sources/:id
-router.delete("/:id", async (req, res) => {
+// DELETE -> Butuh manage_funding_sources
+router.delete("/:id", authorize("manage_funding_sources"), async (req, res) => {
   const id = req.params.id;
 
   try {
-    const used = await pool.query(
-      "SELECT COUNT(*)::int AS c FROM assets WHERE funding_source_id = $1",
-      [id]
-    );
+    const used = await pool.query("SELECT COUNT(*)::int AS c FROM assets WHERE funding_source_id = $1", [id]);
+    if (used.rows[0].c > 0) return res.status(400).json({ message: "Tidak bisa menghapus sumber dana yang masih dipakai oleh aset" });
 
-    if (used.rows[0].c > 0) {
-      return res.status(400).json({
-        message:
-          "Tidak bisa menghapus sumber dana yang masih dipakai oleh aset",
-      });
-    }
-
-    const result = await pool.query(
-      "DELETE FROM funding_sources WHERE id = $1",
-      [id]
-    );
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ message: "Sumber dana tidak ditemukan" });
-    }
+    const result = await pool.query("DELETE FROM funding_sources WHERE id = $1", [id]);
+    if (result.rowCount === 0) return res.status(404).json({ message: "Sumber dana tidak ditemukan" });
 
     res.json({ success: true });
   } catch (err) {
     console.error("Error DELETE /api/funding-sources/:id:", err);
-    res
-      .status(500)
-      .json({ message: "Gagal menghapus sumber dana" });
+    res.status(500).json({ message: "Gagal menghapus sumber dana" });
   }
 });
 

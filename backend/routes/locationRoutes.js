@@ -1,17 +1,17 @@
 // routes/locationRoutes.js
 import express from "express";
 import pool from "../db.js";
+import { verifyToken, authorize } from "../middleware/authMiddleware.js"; // 👈 Import Middleware
 
 const router = express.Router();
 
-// LIST semua lokasi
-router.get("/", async (req, res) => {
+// Pasang Satpam Global
+router.use(verifyToken);
+
+// GET -> Butuh manage_locations
+router.get("/", authorize("manage_locations"), async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT id, name, code, description, created_at
-       FROM locations
-       ORDER BY name ASC`
-    );
+    const result = await pool.query(`SELECT id, name, code, description, created_at FROM locations ORDER BY name ASC`);
     res.json(result.rows);
   } catch (err) {
     console.error("Error GET /api/locations:", err);
@@ -19,21 +19,14 @@ router.get("/", async (req, res) => {
   }
 });
 
-// CREATE lokasi
-router.post("/", async (req, res) => {
+// POST -> Butuh manage_locations
+router.post("/", authorize("manage_locations"), async (req, res) => {
   const { name, code, description } = req.body;
-
-  if (!name) {
-    return res
-      .status(400)
-      .json({ message: "Nama lokasi wajib diisi" });
-  }
+  if (!name) return res.status(400).json({ message: "Nama lokasi wajib diisi" });
 
   try {
     const result = await pool.query(
-      `INSERT INTO locations (name, code, description)
-       VALUES ($1, $2, $3)
-       RETURNING id, name, code, description, created_at`,
+      `INSERT INTO locations (name, code, description) VALUES ($1, $2, $3) RETURNING id, name, code, description, created_at`,
       [name, code || null, description || null]
     );
     res.status(201).json(result.rows[0]);
@@ -43,32 +36,18 @@ router.post("/", async (req, res) => {
   }
 });
 
-// UPDATE lokasi
-router.put("/:id", async (req, res) => {
+// PUT -> Butuh manage_locations
+router.put("/:id", authorize("manage_locations"), async (req, res) => {
   const id = req.params.id;
   const { name, code, description } = req.body;
-
-  if (!name) {
-    return res
-      .status(400)
-      .json({ message: "Nama lokasi wajib diisi" });
-  }
+  if (!name) return res.status(400).json({ message: "Nama lokasi wajib diisi" });
 
   try {
     const result = await pool.query(
-      `UPDATE locations
-       SET name = $1,
-           code = $2,
-           description = $3
-       WHERE id = $4
-       RETURNING id, name, code, description, created_at`,
+      `UPDATE locations SET name = $1, code = $2, description = $3 WHERE id = $4 RETURNING id, name, code, description, created_at`,
       [name, code || null, description || null, id]
     );
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ message: "Lokasi tidak ditemukan" });
-    }
-
+    if (result.rowCount === 0) return res.status(404).json({ message: "Lokasi tidak ditemukan" });
     res.json(result.rows[0]);
   } catch (err) {
     console.error("Error PUT /api/locations/:id:", err);
@@ -76,32 +55,15 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// DELETE lokasi
-router.delete("/:id", async (req, res) => {
+// DELETE -> Butuh manage_locations
+router.delete("/:id", authorize("manage_locations"), async (req, res) => {
   const id = req.params.id;
-
   try {
-    // cek apakah dipakai aset
-    const used = await pool.query(
-      "SELECT COUNT(*)::int AS c FROM assets WHERE location_id = $1",
-      [id]
-    );
+    const used = await pool.query("SELECT COUNT(*)::int AS c FROM assets WHERE location_id = $1", [id]);
+    if (used.rows[0].c > 0) return res.status(400).json({ message: "Tidak bisa menghapus lokasi yang masih dipakai oleh aset" });
 
-    if (used.rows[0].c > 0) {
-      return res.status(400).json({
-        message: "Tidak bisa menghapus lokasi yang masih dipakai oleh aset",
-      });
-    }
-
-    const result = await pool.query(
-      "DELETE FROM locations WHERE id = $1",
-      [id]
-    );
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ message: "Lokasi tidak ditemukan" });
-    }
-
+    const result = await pool.query("DELETE FROM locations WHERE id = $1", [id]);
+    if (result.rowCount === 0) return res.status(404).json({ message: "Lokasi tidak ditemukan" });
     res.json({ success: true });
   } catch (err) {
     console.error("Error DELETE /api/locations/:id:", err);
