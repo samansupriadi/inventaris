@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { fetchMaintenances, updateMaintenance, API_BASE_URL } from "../api";
 import Swal from "sweetalert2";
+import { hasPermission } from "../utils/auth";
 
 function MaintenancePage() {
   const [maintenances, setMaintenances] = useState([]);
@@ -263,12 +264,16 @@ function MaintenancePage() {
                     {/* AKSI */}
                     <td className="p-4 align-top text-center">
                       {item.status !== 'finished' ? (
-                        <button 
-                          onClick={() => handleOpenFinish(item)}
-                          className="w-full inline-flex items-center justify-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-[#009846] text-white hover:bg-[#007b3a] shadow-sm hover:-translate-y-0.5 transition-all"
-                        >
-                          ✅ Selesai
-                        </button>
+                        hasPermission('update_maintenance') ? (
+                          <button 
+                            onClick={() => handleOpenFinish(item)}
+                            className="w-full inline-flex items-center justify-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-[#009846] text-white hover:bg-[#007b3a] shadow-sm hover:-translate-y-0.5 transition-all"
+                          >
+                            ✅ Selesai
+                          </button>
+                        ) : (
+                              <span className="text-[10px] text-slate-400 italic">No Access</span>
+                          )
                       ) : (
                         <div className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 select-none">
                             <span>🔒 Closed</span>
