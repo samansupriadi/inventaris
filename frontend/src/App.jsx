@@ -1,5 +1,5 @@
-// src/App.jsx
 import { useEffect, useState } from "react";
+import { hasPermission } from "./utils/auth";
 import {
   login,
   fetchAssets,
@@ -43,6 +43,7 @@ import {
   softDeleteAsset,
   API_BASE_URL,
   logoutAPI,
+  fetchCurrentUser,
 } from "./api";
 
 // COMPONENTS
@@ -66,6 +67,27 @@ import ReturnAssetModal from "./components/ReturnAssetModal";
 import ImportPage from "./components/ImportPage";
 import StockOpnamePage from "./components/StockOpnamePage"; 
 import ReportPage from "./pages/ReportPage";
+import MaintenancePage from "./pages/MaintenancePage";
+import AuditLogPage from "./components/AuditLogPage";
+
+
+const ProtectedRoute = ({ permission, children }) => {
+  if (!permission) return children;
+  if (hasPermission(permission)) {
+    return children;
+  }
+  return (
+    <div className="flex flex-col items-center justify-center h-full text-center p-8 animate-fade-in">
+      <div className="bg-red-50 p-6 rounded-2xl border border-red-100 max-w-md shadow-sm">
+        <span className="text-4xl mb-4 block">🚫</span>
+        <h2 className="text-xl font-bold text-red-600 mb-2">Akses Ditolak</h2>
+        <p className="text-slate-600 text-sm">
+          Anda tidak memiliki izin <code className="bg-red-100 px-1.5 py-0.5 rounded text-red-700 font-mono text-xs">{permission}</code> untuk mengakses halaman ini.
+        </p>
+      </div>
+    </div>
+  );
+};
 
 function App() {
   // STATE DATA UTAMA
@@ -114,15 +136,25 @@ function App() {
   const ASSET_PAGE_SIZE = 10;
 
   // ---------- AUTHENTICATION ----------
-  const [auth, setAuth] = useState(() => {
-    const saved = localStorage.getItem("auth");
-    if (!saved) return { user: null, isLoggedIn: false };
-    try {
-      return JSON.parse(saved);
-    } catch {
-      return { user: null, isLoggedIn: false };
-    }
-  });
+  const [auth, setAuth] = useState({ user: null, isLoggedIn: false });
+  const [isAppLoading, setIsAppLoading] = useState(true);
+
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        // Panggil endpoint /me untuk cek cookie
+        const user = await fetchCurrentUser();
+        setAuth({ user, isLoggedIn: true });
+      } catch (err) {
+        // Jika gagal/unauthorized, biarkan user null
+        setAuth({ user: null, isLoggedIn: false });
+      } finally {
+        setIsAppLoading(false); // Stop loading apapun hasilnya
+      }
+    };
+
+    initAuth();
+  }, []);
 
   const isLoggedIn = !!auth.user && auth.isLoggedIn;
 
@@ -432,12 +464,13 @@ function App() {
         due_date: payload.due_date || null,
         detail_location: payload.detail_location,
         notes: payload.notes,
-        condition_now: payload.condition_now
+        condition_now: payload.condition_now,
+        photo: payload.photo 
       });
 
-      if (payload.photo && res?.loan?.id) {
-        await uploadLoanBeforePhoto(res.loan.id, payload.photo);
-      }
+      // if (payload.photo && res?.loan?.id) {
+      //   await uploadLoanBeforePhoto(res.loan.id, payload.photo);
+      // }
 
       // Optimistic Update
       if (res?.asset?.id) {
@@ -469,12 +502,13 @@ function App() {
         update_asset_location: payload.update_asset_location,
         return_location_id: payload.return_location_id,
         return_detail_location: payload.return_detail_location,
-        notes_return: payload.notes_return
+        notes_return: payload.notes_return,
+        photo: payload.photo 
       });
 
-      if (payload.photo && res?.loan?.id) {
-        await uploadLoanAfterPhoto(res.loan.id, payload.photo);
-      }
+      // if (payload.photo && res?.loan?.id) {
+      //   await uploadLoanAfterPhoto(res.loan.id, payload.photo);
+      // }
 
       if (res?.asset?.id) {
         setAssets((prev) => prev.map((a) => (a.id === res.asset.id ? res.asset : a)));
@@ -591,7 +625,17 @@ function App() {
 
 
   // ---------- RENDER ----------
-  
+  if (isAppLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-50">
+        <div className="text-center animate-fade-in">
+          <div className="inline-block animate-spin rounded-full h-10 w-10 border-4 border-[#009846] border-t-transparent"></div>
+          <p className="mt-4 text-slate-500 font-medium text-sm">Memuat aplikasi...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!isLoggedIn) {
     return <LoginPage onLoginSuccess={handleLogin} />;
   }
@@ -609,6 +653,7 @@ function App() {
           case 'users': return "Manajemen Pengguna";
           case 'permissions': return "System Permissions";
           case 'reports': return "Pusat Laporan";
+          case 'maintenance': return "Perawatan Aset";
           default: return "Sinergi Foundation Inventaris";
       }
   };
@@ -686,132 +731,167 @@ function App() {
               // VIEW REGULAR PAGES
               <>
                 {activeMenu === "dashboard" && (
-                  <DashboardPage
-                    assets={assets}
-                    fundingSummary={fundingSummary}
-                  />
+                  <ProtectedRoute permission="view_dashboard">
+                    <DashboardPage assets={assets} fundingSummary={fundingSummary} />
+                  </ProtectedRoute>
                 )}
 
                 {activeMenu === "assets" && (
-                  <AssetsPage
-                    assets={filteredAssets}
-                    loading={loading}
-                    fundingSources={fundingSources}
-                    locations={locations}
-                    categories={categories}
-                    search={search}
-                    filterCondition={filterCondition}
-                    filterLocation={filterLocation}
-                    selectedFundingFilter={selectedFundingFilter}
-                    filterCategory={filterCategory}
-                    filterStatus={filterStatus}
-                    filterYear={filterYear}
-                    years={assetYears}
-                    onSearchChange={handleSearchChange}
-                    onConditionChange={handleConditionChange}
-                    onLocationChange={handleLocationChange}
-                    onFundingFilterChange={handleFundingFilterChange}
-                    onCategoryChange={handleCategoryChange}
-                    onStatusChange={handleStatusChange}
-                    onYearChange={handleYearChange}
-                    onResetFilters={handleResetFilters}
-                    onUploadPhoto={handleUploadPhoto} // Note: This might need adjustment if using modal only
-                    onBorrow={handleBorrow}
-                    onReturn={handleReturn}
-                    onShowDetail={setSelectedAsset}
-                    onPreviewPhoto={setPreviewUrl}
-                    onExportCsv={handleExportCsv}
-                    onPrintQr={handlePrintQr}
-                    onBulkPrintQr={handleBulkPrintQr}
-                    page={assetPage}
-                    pageSize={ASSET_PAGE_SIZE}
-                    totalItems={filteredAssets.length}
-                    totalPages={totalAssetPages}
-                    onPageChange={setAssetPage}
-                    onOpenAddModal={() => setAddModalOpen(true)}
-                    onEditAsset={handleOpenEdit}
-                    onDeleteAsset={handleDeleteAsset}
-                  />
+                  <ProtectedRoute permission="view_assets">
+                    <AssetsPage
+                      assets={filteredAssets}
+                      loading={loading}
+                      fundingSources={fundingSources}
+                      locations={locations}
+                      categories={categories}
+                      search={search}
+                      filterCondition={filterCondition}
+                      filterLocation={filterLocation}
+                      selectedFundingFilter={selectedFundingFilter}
+                      filterCategory={filterCategory}
+                      filterStatus={filterStatus}
+                      filterYear={filterYear}
+                      years={assetYears}
+                      onSearchChange={handleSearchChange}
+                      onConditionChange={handleConditionChange}
+                      onLocationChange={handleLocationChange}
+                      onFundingFilterChange={handleFundingFilterChange}
+                      onCategoryChange={handleCategoryChange}
+                      onStatusChange={handleStatusChange}
+                      onYearChange={handleYearChange}
+                      onResetFilters={handleResetFilters}
+                      onUploadPhoto={handleUploadPhoto} 
+                      onBorrow={handleBorrow}
+                      onReturn={handleReturn}
+                      onShowDetail={setSelectedAsset}
+                      onPreviewPhoto={setPreviewUrl}
+                      onExportCsv={handleExportCsv}
+                      onPrintQr={handlePrintQr}
+                      onBulkPrintQr={handleBulkPrintQr}
+                      page={assetPage}
+                      pageSize={ASSET_PAGE_SIZE}
+                      totalItems={filteredAssets.length}
+                      totalPages={totalAssetPages}
+                      onPageChange={setAssetPage}
+                      onOpenAddModal={() => setAddModalOpen(true)}
+                      onEditAsset={handleOpenEdit}
+                      onDeleteAsset={handleDeleteAsset}
+                      userPermissions={auth.user?.permissions || []}
+                    />
+                  </ProtectedRoute>
                 )}
 
                 {activeMenu === "funding" && (
-                  <FundingSourcePage
-                    fundingSources={fundingSources}
-                    entities={entities}
-                    onCreate={handleCreateFundingSource}
-                    onUpdate={handleUpdateFundingSource}
-                    onDelete={handleDeleteFundingSource}
-                  />
+                  <ProtectedRoute permission="manage_funding_sources">
+                    <FundingSourcePage
+                      fundingSources={fundingSources}
+                      entities={entities}
+                      onCreate={handleCreateFundingSource}
+                      onUpdate={handleUpdateFundingSource}
+                      onDelete={handleDeleteFundingSource}
+                    />
+                  </ProtectedRoute>
                 )}
 
                 {activeMenu === "locations" && (
-                  <LocationPage
-                    locations={locations}
-                    onCreate={handleCreateLocation}
-                    onUpdate={handleUpdateLocation}
-                    onDelete={handleDeleteLocation}
-                  />
+                  <ProtectedRoute permission="manage_locations">
+                    <LocationPage
+                      locations={locations}
+                      onCreate={handleCreateLocation}
+                      onUpdate={handleUpdateLocation}
+                      onDelete={handleDeleteLocation}
+                    />
+                  </ProtectedRoute>
                 )}
 
                 {activeMenu === "categories" && (
-                  <CategoryPage
-                    categories={categories}
-                    onCreate={handleCreateCategory}
-                    onUpdate={handleUpdateCategory}
-                    onDelete={handleDeleteCategory}
-                  />
+                  <ProtectedRoute permission="manage_categories">
+                    <CategoryPage
+                      categories={categories}
+                      onCreate={handleCreateCategory}
+                      onUpdate={handleUpdateCategory}
+                      onDelete={handleDeleteCategory}
+                    />
+                  </ProtectedRoute>
                 )}
 
                 {activeMenu === "roles" && (
-                  <RolePage
-                    roles={roles}
-                    permissions={permissions}
-                    onCreate={handleCreateRole}
-                    onUpdate={handleUpdateRole}
-                    onDelete={handleDeleteRole}
-                  />
+                  <ProtectedRoute permission="manage_roles">
+                    <RolePage
+                      roles={roles}
+                      permissions={permissions}
+                      onCreate={handleCreateRole}
+                      onUpdate={handleUpdateRole}
+                      onDelete={handleDeleteRole}
+                    />
+                  </ProtectedRoute>
                 )}
 
                 {activeMenu === "permissions" && (
-                  <PermissionPage
-                    permissions={permissions}
-                    onCreate={handleCreatePermission}
-                    onUpdate={handleUpdatePermission}
-                    onDelete={handleDeletePermission}
-                  />
+                  <ProtectedRoute permission="view_permissions">
+                    <PermissionPage
+                      permissions={permissions}
+                      onCreate={handleCreatePermission}
+                      onUpdate={handleUpdatePermission}
+                      onDelete={handleDeletePermission}
+                    />
+                  </ProtectedRoute>
                 )}
 
                 {activeMenu === "users" && (
-                  <UserPage
-                    users={users}
-                    roles={roles}
-                    entities={entities}
-                    onCreate={handleCreateUser}
-                    onUpdate={handleUpdateUser}
-                    onDelete={handleDeleteUser}
-                  />
+                  <ProtectedRoute permission="manage_users">
+                    <UserPage
+                      users={users}
+                      roles={roles}
+                      entities={entities}
+                      onCreate={handleCreateUser}
+                      onUpdate={handleUpdateUser}
+                      onDelete={handleDeleteUser}
+                    />
+                  </ProtectedRoute>
                 )}
 
                 {activeMenu === "entities" && (
-                  <EntityPage
-                    entities={entities}
-                    onCreate={handleCreateEntity}
-                    onUpdate={handleUpdateEntity}
-                    onDelete={handleDeleteEntity}
-                  />
+                  <ProtectedRoute permission="manage_entities">
+                    <EntityPage
+                      entities={entities}
+                      onCreate={handleCreateEntity}
+                      onUpdate={handleUpdateEntity}
+                      onDelete={handleDeleteEntity}
+                    />
+                  </ProtectedRoute>
                 )}
 
                 {activeMenu === "import" && (
-                  <ImportPage onImportSuccess={refreshAllData} />
+                  <ProtectedRoute permission="import_data">
+                    <ImportPage onImportSuccess={refreshAllData} />
+                  </ProtectedRoute>
                 )}
                 
-                {activeMenu === "opname" && (
-                  <StockOpnamePage />
+                {(activeMenu === "opname" || activeMenu === "stock-opname") && (
+                  <ProtectedRoute permission="view_opname">
+                    <StockOpnamePage />
+                  </ProtectedRoute>
                 )}
 
                 {activeMenu === "reports" && (
-                  <ReportPage />
+                  <ProtectedRoute permission="view_reports">
+                    <ReportPage />
+                  </ProtectedRoute>
                 )}
+
+                {activeMenu === "maintenance" && (
+                  <ProtectedRoute permission="view_maintenance">
+                    <MaintenancePage />
+                  </ProtectedRoute>
+                )}
+
+                {activeMenu === "audit-logs" && (
+                  <ProtectedRoute permission="view_audit_logs">
+                    <AuditLogPage />
+                  </ProtectedRoute>
+                )}
+
               </>
             )}
           </div>
@@ -843,6 +923,7 @@ function App() {
         locations={locations}
         categories={categories}
         onClose={() => setSelectedAsset(null)}
+        onUpdate={() => refreshAllData()}
       />
 
       {/* Modal Tambah Aset */}

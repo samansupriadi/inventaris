@@ -1,39 +1,49 @@
 // src/components/Sidebar.jsx
-import { hasPermission, getUser } from "../utils/auth"; // Helper Security
-
+import { hasPermission, getUser } from "../utils/auth"; 
 
 function Sidebar({ activeMenu, onChange, className = "" }) {
-  // Ambil data user untuk ditampilkan di footer sidebar
   const user = getUser(); 
 
-  // Definisi Menu: Dikelompokkan & Diproteksi Permission
+  // Definisi Menu & Permission Slug (REVISI: SESUAI DATABASE)
   const menuGroups = [
     {
       title: "Menu Utama",
       items: [
-        { id: "dashboard", label: "Dashboard", icon: "📊", permission: null }, // null = Semua bisa akses
+        { id: "dashboard", label: "Dashboard", icon: "📊", permission: "view_dashboard" },
         { id: "assets", label: "Aset & Inventaris", icon: "📦", permission: "view_assets" },
-        { id: "reports", label: "Pusat Laporan", icon: "🖨️", permission: null },
+        { id: "reports", label: "Pusat Laporan", icon: "🖨️", permission: "view_reports" },
+        { id: "maintenance", label: "Maintenance", icon: "🔧", permission: "view_maintenance" },
       ]
     },
     {
       title: "Master Data",
       items: [
-        { id: "entities", label: "Entitas / Unit", icon: "🏛️", permission: "view_entities" },
-        { id: "locations", label: "Lokasi", icon: "🏢", permission: "view_locations" },
-        { id: "categories", label: "Kategori Aset", icon: "🏷️", permission: "view_categories" },
-        { id: "funding", label: "Sumber Dana", icon: "💰", permission: "view_funding_sources" },
-        { id: "opname", label: "Stock Opname", icon: "📋", permission: "view_assets" },
+        // REVISI: Gunakan 'manage_...' bukan 'view_...' sesuai seeder
+        { id: "entities", label: "Entitas / Unit", icon: "🏛️", permission: "manage_entities" },
+        { id: "locations", label: "Lokasi", icon: "🏢", permission: "manage_locations" },
+        { id: "categories", label: "Kategori Aset", icon: "🏷️", permission: "manage_categories" },
+        { id: "funding", label: "Sumber Dana", icon: "💰", permission: "manage_funding_sources" },
+        
+        // Stock Opname permission-nya 'view_stock_opname' atau 'view_opname' (cek seeder)
+        // Di seeder terakhir: 'view_opname'
+        { id: "opname", label: "Stock Opname", icon: "📋", permission: "view_opname" },
       ]
     },
     {
       title: "Pengaturan Sistem",
       items: [
-        { id: "users", label: "Users Management", icon: "👥", permission: "view_users" },
-        { id: "roles", label: "Roles & Hak Akses", icon: "🛡️", permission: "view_roles" },
-        { id: "permissions", label: "Permission List", icon: "🔐", permission: "view_permissions" },
+        // User & Role Management (Sesuai seeder: 'manage_users', 'manage_roles')
+        { id: "users", label: "Users Management", icon: "👥", permission: "manage_users" },
+        { id: "roles", label: "Roles & Hak Akses", icon: "🛡️", permission: "manage_roles" },
+        
+        // Permission list tidak ada permission khusus 'manage_permissions' di seeder terakhir, 
+        // biasanya ikut 'manage_roles' atau admin only. 
+        // Jika ingin spesifik, pastikan slug-nya ada di DB. 
+        // Untuk sekarang kita set ke 'manage_roles' dulu agar GA tidak lihat (kecuali GA punya manage_roles).
+        { id: "permissions", label: "Permission List", icon: "🔐", permission: "manage_roles" },
+        
         { id: "import", label: "Import Data", icon: "📥", permission: "import_data" },
-        { id: "audit-logs", label: "Audit Logs", icon: "📜", permission: null },
+        { id: "audit-logs", label: "Audit Logs", icon: "📜", permission: "view_audit_logs" },
       ]
     }
   ];
@@ -54,7 +64,6 @@ function Sidebar({ activeMenu, onChange, className = "" }) {
       >
         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#009846] to-[#007b3a] p-0.5 shadow-lg shadow-green-900/50 flex-shrink-0 group-hover:scale-105 transition-transform">
           <div className="w-full h-full bg-white rounded-[10px] flex items-center justify-center overflow-hidden">
-             {/* Logo Fallback: Text SF jika gambar tidak ada */}
              <img 
                src="/images/logo-small.png" 
                alt="SF" 
@@ -76,12 +85,13 @@ function Sidebar({ activeMenu, onChange, className = "" }) {
       <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-8 custom-scrollbar">
         {menuGroups.map((group, idx) => {
           
-          // Filter item: Hanya tampilkan jika permission null (publik) ATAU user punya permission tersebut
-          const visibleItems = group.items.filter(item => 
-            !item.permission || hasPermission(item.permission)
-          );
+          // Filter item berdasarkan permission
+          const visibleItems = group.items.filter(item => {
+            if (!item.permission) return true; // Public
+            return hasPermission(item.permission);
+          });
 
-          if (visibleItems.length === 0) return null; // Sembunyikan grup jika isinya kosong
+          if (visibleItems.length === 0) return null; // Hide empty group
 
           return (
             <div key={idx} className="animate-fade-in-up" style={{ animationDelay: `${idx * 100}ms` }}>
@@ -94,7 +104,6 @@ function Sidebar({ activeMenu, onChange, className = "" }) {
                   return (
                     <button
                       key={item.id}
-                      type="button"
                       onClick={() => onChange(item.id)}
                       className={`
                         w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group relative
@@ -104,7 +113,6 @@ function Sidebar({ activeMenu, onChange, className = "" }) {
                         }
                       `}
                     >
-                      {/* Active Indicator Line (Left) */}
                       {active && (
                         <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-white/20 rounded-r-full" />
                       )}
@@ -114,7 +122,6 @@ function Sidebar({ activeMenu, onChange, className = "" }) {
                       </span>
                       <span>{item.label}</span>
                       
-                      {/* Chevron Right (Hover Effect) */}
                       {!active && (
                         <span className="absolute right-3 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all text-slate-600 font-bold">
                           ›
@@ -133,7 +140,6 @@ function Sidebar({ activeMenu, onChange, className = "" }) {
       <div className="p-4 border-t border-slate-800 bg-slate-900/50 backdrop-blur-sm">
         <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-800/50 border border-slate-700/50 hover:bg-slate-800 transition-colors cursor-default">
           <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-slate-600 to-slate-500 flex items-center justify-center text-xs font-bold text-white shadow-inner border border-slate-600">
-             {/* Inisial User */}
              {user?.name?.charAt(0).toUpperCase() || "U"}
           </div>
           <div className="flex-1 min-w-0">

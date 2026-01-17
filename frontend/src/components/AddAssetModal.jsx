@@ -152,8 +152,28 @@ function AddAssetModal({
     // Receipt boleh opsional tergantung kebijakan, tapi di sini kita buat wajib jika add new
     if (!isEdit && !receiptFile) { setError("Kwitansi wajib diupload"); setIsSubmitting(false); return; }
 
+    // === LOGIKA BARU: SINKRONISASI STATUS OTOMATIS ===
+    // Ambil status lama sebagai default (untuk edit) atau 'available' (untuk baru)
+    let newStatus = isEdit ? initialData.status : 'available';
+    
+    // 1. Kondisi BAIK -> Status AVAILABLE
+    if (condition === 'baik') {
+        // Pengecualian: Jika aset sedang dipinjam, jangan ubah jadi available dulu
+        if (newStatus !== 'borrowed') {
+            newStatus = 'available';
+        }
+    } 
+    // 2. Kondisi RUSAK -> Status RUSAK
+    else if (condition === 'rusak') {
+        newStatus = 'rusak';
+    }
+    // 3. Kondisi HILANG -> Status HILANG
+    else if (condition === 'hilang') {
+        newStatus = 'hilang';
+    }
     const payload = {
       name, location: locationDetail, condition, 
+      status: newStatus,
       funding_source_id: fundingSourceId, location_id: locationId || null, 
       category_id: categoryId, budget_code_id: budgetCodeId || null, 
       notes, purchase_date: purchaseDate || null,
@@ -304,10 +324,6 @@ function AddAssetModal({
                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Kondisi Saat Ini</label>
                    <select className="input-field w-full bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-sm" value={condition} onChange={(e) => setCondition(e.target.value)}>
                      <option value="baik">Baik</option>
-                     <option value="cukup">Cukup</option>
-                     <option value="rusak">Rusak</option>
-                     <option value="maintenance">Maintenance</option>
-                     <option value="hilang">Hilang</option>
                    </select>
                  </div>
                  <div className="md:col-span-2">

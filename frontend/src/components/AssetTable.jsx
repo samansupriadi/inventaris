@@ -1,8 +1,8 @@
 // src/components/AssetTable.jsx
 import { useEffect, useState } from "react";
 import { API_BASE_URL } from "../api";
-// Pastikan path ini benar sesuai struktur folder Bapak
 import { calculateBookValue, formatRupiah } from "../utils/depreciation"; 
+import { hasPermission } from "../utils/auth"
 
 function AssetTable({
   assets,
@@ -19,12 +19,18 @@ function AssetTable({
   onBulkPrintQr,
   onEdit,
   onDelete,
+  userPermissions = [] 
 }) {
   const [openMenuId, setOpenMenuId] = useState(null);
   const [deleteModal, setDeleteModal] = useState({ open: false, asset: null });
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
-  // Helper Toast
+  // --- CEK HAK AKSES ---
+  const canBorrow = hasPermission('borrow_asset');
+  const canReturn = hasPermission('return_asset');
+  const canEdit = hasPermission('update_assets'); 
+  const canDelete = hasPermission('delete_assets'); 
+
   const showToast = (message, type = 'success') => {
     setToast({ show: true, message, type });
     setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
@@ -36,7 +42,6 @@ function AssetTable({
     return () => document.removeEventListener("click", onDocClick);
   }, []);
 
-  // --- HELPER LOOKUP ---
   const getFundingName = (id) => fundingSources?.find((x) => x.id === id)?.name || "-";
   const getLocationName = (id) => locations?.find((x) => x.id === id)?.name || "-";
   const getCategoryName = (id) => {
@@ -58,6 +63,114 @@ function AssetTable({
       setDeleteModal({ open: false, asset: null });
       showToast(err?.message || "Gagal menghapus aset.", "error");
     }
+  };
+
+ // --- HELPER: RENDER STATUS BADGE (VERSI UPDATED) ---
+  const renderStatusBadge = (asset) => {
+    
+    // 1. Cek Status/Kondisi Buruk (Merah/Abu)
+    if (asset.status === 'hilang' || asset.condition === 'hilang') {
+        return <span className="inline-flex items-center px-2.5 py-0.5 text-[10px] font-bold text-white bg-slate-600 rounded-md shadow-sm">Hilang</span>;
+    }
+    
+    // Cek jika status 'rusak' ATAU kondisi 'rusak' (dan bukan maintenance)
+    if ((asset.status === 'rusak' || asset.condition === 'rusak') && asset.status !== 'maintenance') {
+        return <span className="inline-flex items-center px-2.5 py-0.5 text-[10px] font-bold text-white bg-red-600 rounded-md shadow-sm">Rusak Berat</span>;
+    }
+
+    // 2. Status Maintenance (Kuning)
+    if (asset.status === 'maintenance') {
+        return <span className="inline-flex items-center px-2.5 py-0.5 text-[10px] font-bold text-yellow-800 bg-yellow-100 border border-yellow-200 rounded-md">Maintenance</span>;
+    }
+
+    // 3. Status Peminjaman & Ketersediaan
+    switch (asset.status) {
+      case 'borrowed':
+        return <span className="inline-flex items-center px-2.5 py-0.5 text-[10px] font-bold text-orange-700 bg-orange-100 border border-orange-200 rounded-md">Dipinjam</span>;
+      case 'available':
+        return <span className="inline-flex items-center px-2.5 py-0.5 text-[10px] font-bold text-green-700 bg-green-100 border border-green-200 rounded-md">Tersedia</span>;
+      default:
+        // Fallback untuk status lain
+        return <span className="inline-flex items-center px-2.5 py-0.5 text-[10px] font-medium text-slate-600 bg-slate-100 border border-slate-200 rounded-md capitalize">{asset.status || "-"}</span>;
+    }
+  };
+
+// --- HELPER: RENDER ACTION BUTTON (VERSI UPDATED) ---
+  const renderActionButton = (asset) => {
+    // Styling base
+    const baseClass = "w-28 h-8 inline-flex items-center justify-center gap-1.5 px-3 text-[11px] font-bold rounded-lg shadow-sm transition-all";
+
+    // 1. Jika Dipinjam -> Tombol KEMBALIKAN (Orange)
+    if (asset.status === 'borrowed') {
+      if (!canReturn) return <span className="text-xs text-slate-400 italic w-28 text-center">No Access</span>;
+      
+      return (
+        <button 
+          onClick={() => onReturn?.(asset)} 
+          className={`${baseClass} bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:from-orange-600 hover:to-orange-700 hover:shadow-orange-200 hover:-translate-y-0.5`}
+          title="Kembalikan Aset"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+            <path fillRule="evenodd" d="M7.793 2.232a.75.75 0 011.633-.322c.814.958 1.446 2.133 1.816 3.425.433.19.815.463 1.12.796a3.003 3.003 0 011.139.027A13.06 13.06 0 0013.914 5a.75.75 0 011.44.418c-.378 1.304-.99 2.683-1.82 3.843a3.753 3.753 0 01-1.39 3.163l-.717.525a.75.75 0 01-1.026-.134l-.567-.773a.75.75 0 01.124-1.034l.716-.525c.31-.228.562-.516.735-.845a1.5 1.5 0 00-.73-2.07A1.503 1.503 0 009.6 8.5l-.27.27a1.5 1.5 0 00.322 2.373c.277.16.58.261.9.298a.75.75 0 01.077 1.498 4.5 4.5 0 01-2.91-1.2l-.72-.72a4.5 4.5 0 01-1.12-2.185A14.633 14.633 0 014.28 5.61a.75.75 0 011.06-1.06c.21.21.436.41.677.599.418-1.068.995-2.062 1.776-2.917z" clipRule="evenodd" />
+          </svg>
+          Kembalikan
+        </button>
+      );
+    }
+
+    // 2. Jika Maintenance -> Badge KUNING
+    if (asset.status === 'maintenance') {
+        return (
+            <div className={`${baseClass} bg-yellow-100 text-yellow-700 border border-yellow-300 cursor-not-allowed`}>
+                <span className="relative flex h-2 w-2 mr-1">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
+                </span>
+                Perbaikan
+            </div>
+        );
+    }
+
+    // 3. Jika Rusak/Hilang -> Badge MERAH/ABU (Sesuai Status)
+    if (asset.status === 'rusak' || asset.condition === 'rusak') {
+        return (
+            <div className={`${baseClass} bg-red-100 text-red-700 border border-red-200 cursor-not-allowed`}>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                Rusak Berat
+            </div>
+        );
+    }
+    
+    if (asset.status === 'hilang' || asset.condition === 'hilang') {
+        return (
+            <div className={`${baseClass} bg-slate-200 text-slate-600 border border-slate-300 cursor-not-allowed`}>
+                Aset Hilang
+            </div>
+        );
+    }
+
+    // 4. Jika Tersedia -> Tombol PINJAM (Hijau)
+    if (asset.status === 'available' || (!asset.status && asset.condition === 'baik')) {
+      if (!canBorrow) return <span className="text-xs text-slate-400 italic w-28 text-center">No Access</span>;
+
+      return (
+        <button 
+          onClick={() => onBorrow?.(asset)} 
+          className={`${baseClass} bg-gradient-to-r from-[#009846] to-[#007b3a] text-white hover:to-[#00602e] hover:shadow-green-200 hover:-translate-y-0.5`}
+          title="Pinjam Aset"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+            <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+          </svg>
+          Pinjam
+        </button>
+      );
+    }
+
+    // Default Fallback
+    return <span className="text-slate-300 w-28 text-center text-xs">-</span>;
   };
 
   return (
@@ -121,8 +234,6 @@ function AssetTable({
 
               <tbody className="divide-y divide-slate-100 bg-white">
                 {assets.map((a) => {
-                  // === SAFETY GUARD ===
-                  // Jika data rusak/kosong (seperti hantu di screenshot), jangan render baris ini.
                   if (!a || !a.name) return null;
 
                   return (
@@ -141,7 +252,6 @@ function AssetTable({
                       {/* KATEGORI */}
                       <td className="p-4 align-top text-slate-600 font-medium">
                         {getCategoryName(a.category_id)}
-                        {/* Logic Tampilan Umur */}
                         {a.useful_life > 0 ? (
                           <div className="text-[10px] text-slate-400 mt-0.5">
                             Umur Eko: {a.useful_life} Thn
@@ -177,20 +287,12 @@ function AssetTable({
                         </span>
                       </td>
 
-                      {/* STATUS */}
+                      {/* STATUS (UPDATED) */}
                       <td className="p-4 align-top">
-                        {a.status === 'borrowed' ? (
-                          <span className="inline-flex items-center px-2 py-0.5 text-[10px] font-medium text-orange-700 bg-orange-50 border border-orange-100 rounded-md">
-                            Dipinjam
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 text-[10px] font-medium text-slate-600 bg-slate-50 border border-slate-100 rounded-md">
-                            Tersedia
-                          </span>
-                        )}
+                        {renderStatusBadge(a)}
                       </td>
 
-                      {/* NILAI (Dengan Perhitungan) */}
+                      {/* NILAI */}
                       <td className="p-4 align-top">
                         <div className="font-bold text-[#009846] text-sm">
                            {formatRupiah(calculateBookValue(a))}
@@ -217,20 +319,18 @@ function AssetTable({
                         </div>
                       </td>
 
-                      {/* AKSI */}
+                      {/* AKSI (UPDATED PERMISSION & STYLE) */}
                       <td className="p-4 align-top text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {/* Logika Tombol Status: Jika 'available' -> Pinjam, selain itu -> Kembalikan */}
-                          {a.status === "available" ? (
-                            <button onClick={() => onBorrow?.(a)} className="px-3 py-1.5 text-[10px] font-semibold rounded-lg bg-[#009846] text-white hover:bg-[#007b3a] shadow-sm transition-all hover:shadow">Pinjam</button>
-                          ) : (
-                            <button onClick={() => onReturn?.(a)} className="px-3 py-1.5 text-[10px] font-semibold rounded-lg bg-[#F68D2E] text-white hover:bg-[#e07b22] shadow-sm transition-all hover:shadow">Kembalikan</button>
-                          )}
+                          
+                          {/* TOMBOL DINAMIS (Permission + Style Solid) */}
+                          {renderActionButton(a)}
 
                           <button onClick={() => onShowDetail?.(a)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-transparent hover:border-blue-100" title="Detail">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                           </button>
 
+                          {/* MENU TITIK TIGA */}
                           <div className="relative" onClick={(e) => e.stopPropagation()}>
                             <button onClick={() => setOpenMenuId(openMenuId === a.id ? null : a.id)} className={`p-1.5 rounded-lg transition-colors border border-transparent ${openMenuId === a.id ? 'bg-slate-100 text-slate-800' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}>
                               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z" /></svg>
@@ -242,15 +342,25 @@ function AssetTable({
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" /><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM13.5 19.5h.75v.75h-.75v-.75zM19.5 13.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75z" /></svg>
                                     Print QR
                                   </button>
-                                  <button onClick={() => { setOpenMenuId(null); onEdit?.(a); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-600 hover:bg-slate-50 hover:text-blue-600 flex items-center gap-2">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" /></svg>
-                                    Edit Data
-                                  </button>
-                                  <div className="h-px bg-slate-100 my-1"></div>
-                                  <button onClick={() => { setOpenMenuId(null); handleDeleteClick(a); }} className="w-full text-left px-4 py-2.5 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
-                                    Hapus
-                                  </button>
+                                  
+                                  {/* EDIT (Opsional: Cek Permission canEdit) */}
+                                  {canEdit && (
+                                    <button onClick={() => { setOpenMenuId(null); onEdit?.(a); }} className="w-full text-left px-4 py-2.5 text-xs text-slate-600 hover:bg-slate-50 hover:text-blue-600 flex items-center gap-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" /></svg>
+                                        Edit Data
+                                    </button>
+                                  )}
+
+                                  {/* DELETE (Opsional: Cek Permission canDelete) */}
+                                  {canDelete && (
+                                    <>
+                                        <div className="h-px bg-slate-100 my-1"></div>
+                                        <button onClick={() => { setOpenMenuId(null); handleDeleteClick(a); }} className="w-full text-left px-4 py-2.5 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2">
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+                                            Hapus
+                                        </button>
+                                    </>
+                                  )}
                                 </div>
                               </div>
                             )}
@@ -266,7 +376,7 @@ function AssetTable({
         )}
       </div>
 
-      {/* MODAL KONFIRMASI HAPUS (Tetap Sama) */}
+      {/* MODAL KONFIRMASI HAPUS */}
       {deleteModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in" onClick={() => setDeleteModal({ open: false, asset: null })}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all scale-100 border border-slate-100" onClick={(e) => e.stopPropagation()}>

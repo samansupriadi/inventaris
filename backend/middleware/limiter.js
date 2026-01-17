@@ -12,7 +12,7 @@ export const globalLimiter = rateLimit({
 // Batasi 5 request per 15 menit (Khusus Login)
 export const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: 100,
   message: { message: "Terlalu banyak percobaan login. Akun dikunci sementara 15 menit." },
   standardHeaders: true,
   legacyHeaders: false,

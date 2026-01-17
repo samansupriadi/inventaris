@@ -51,8 +51,18 @@ function ReturnAssetModal({
         return;
     }
 
+// === LOGIKA BARU: Tentukan Status Aset Berdasarkan Kondisi ===
+    let newStatus = 'available'; // Default: Jika Baik, jadi Available
+
+    if (conditionAfter === 'rusak') {
+        newStatus = 'rusak';
+    } else if (conditionAfter === 'hilang') {
+        newStatus = 'hilang';
+    }
+
     onSubmit?.({
       condition_after: conditionAfter,
+      new_status: newStatus,
       return_location_id: returnLocationId,
       return_detail_location: returnDetailLocation,
       notes_return: notesReturn,
@@ -105,11 +115,9 @@ function ReturnAssetModal({
                     value={conditionAfter}
                     onChange={(e) => setConditionAfter(e.target.value)}
                 >
-                    <option value="baik">Baik</option>
-                    <option value="cukup">Cukup</option>
-                    <option value="rusak">Rusak</option>
-                    <option value="maintenance">Maintenance</option>
-                    <option value="hilang">Hilang</option>
+                     <option value="baik">Baik</option>
+                     <option value="rusak">Rusak</option>
+                     <option value="hilang">Hilang</option>
                 </select>
             </div>
 

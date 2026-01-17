@@ -20,6 +20,24 @@ export const verifyToken = (req, res, next) => {
   }
 };
 
+export const verifyRole = (allowedRoles) => {
+  return (req, res, next) => {
+    // Pastikan user sudah login & punya role
+    if (!req.user || !req.user.role) {
+      return res.status(403).json({ message: "Akses dilarang! Role tidak terdeteksi." });
+    }
+
+    // Cek apakah role user ada di daftar yang diizinkan
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ 
+        message: `Akses ditolak! Halaman ini khusus ${allowedRoles.join(" atau ")}` 
+      });
+    }
+
+    next();
+  };
+};
+
 // 2. Cek Permission (Authorization - Spatie Style)
 // Contoh penggunaan di route: authorize('create_user')
 export const authorize = (requiredPermission) => {

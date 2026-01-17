@@ -1,7 +1,9 @@
+// src/components/StockOpnamePage.jsx
 import { useState, useEffect, useRef } from "react";
 import { Html5QrcodeScanner } from "html5-qrcode"; // Library Scanner
 import { playBeep } from "../utils/sound"; // Helper Suara
 import { fetchLocations, createOpnameSession, fetchOpnameSessions, fetchOpnameDetail, updateOpnameItem, finalizeOpname } from "../api";
+import Swal from "sweetalert2"; // 👈 Import SweetAlert2
 
 function StockOpnamePage() {
   const [view, setView] = useState("list");
@@ -65,16 +67,35 @@ function StockOpnamePage() {
         // Auto verify di sistem
         handleVerify(targetItem, 'Matched');
         
-        alert(`✅ DITEMUKAN!\n\nNama: ${targetItem.asset_name}\nKode: ${decodedText}`);
+        // Tampilkan SweetAlert Success
+        Swal.fire({
+            icon: 'success',
+            title: 'DITEMUKAN!',
+            html: `<div class="text-left text-sm">
+                    <p><strong>Nama:</strong> ${targetItem.asset_name}</p>
+                    <p><strong>Kode:</strong> ${decodedText}</p>
+                   </div>`,
+            timer: 2000,
+            showConfirmButton: false
+        }).then(() => {
+            // Resume scanner setelah alert tutup otomatis
+            if (scannerRef.current) scannerRef.current.resume();
+        });
+
     } else {
         // SKENARIO B: ASET SALAH LOKASI / TIDAK ADA DI LIST ❌
         playBeep("error"); // Bunyi "Tet-tot!"
-        alert(`❌ PERINGATAN!\n\nAset dengan kode "${decodedText}" TIDAK ADA dalam daftar audit lokasi ini.\n\nKemungkinan aset salah lokasi.`);
-    }
-
-    // 3. Resume scanner setelah alert ditutup user
-    if (scannerRef.current) {
-        scannerRef.current.resume();
+        
+        // Tampilkan SweetAlert Error
+        Swal.fire({
+            icon: 'error',
+            title: 'TIDAK COCOK!',
+            text: `Aset "${decodedText}" tidak ada di daftar lokasi ini.`,
+            confirmButtonColor: '#d33'
+        }).then(() => {
+            // Resume scanner setelah user klik OK
+            if (scannerRef.current) scannerRef.current.resume();
+        });
     }
   };
 
@@ -83,25 +104,40 @@ function StockOpnamePage() {
   };
 
   const loadData = async () => {
-    const data = await fetchOpnameSessions();
-    setSessions(data);
+    try {
+        const data = await fetchOpnameSessions();
+        setSessions(data);
+    } catch (err) {
+        console.error(err);
+    }
   };
 
   const loadLocations = async () => {
-    const data = await fetchLocations();
-    setLocations(data);
+    try {
+        const data = await fetchLocations();
+        setLocations(data);
+    } catch (err) {
+        console.error(err);
+    }
   };
 
   const handleCreate = async (e) => {
     e.preventDefault();
-    if(!newTitle || !selectedLoc) return alert("Lengkapi data!");
+    if(!newTitle || !selectedLoc) {
+        return Swal.fire({ icon: 'warning', title: 'Data Kurang', text: 'Mohon lengkapi judul & lokasi.' });
+    }
+
     setLoading(true);
     try {
         await createOpnameSession({ title: newTitle, location_id: selectedLoc });
         setNewTitle(""); setSelectedLoc("");
         loadData();
-        alert("Sesi Opname Berhasil Dibuat!");
-    } catch(err) { alert(err.message); } finally { setLoading(false); }
+        Swal.fire({ icon: 'success', title: 'Berhasil', text: 'Sesi Opname baru telah dibuat!', timer: 1500, showConfirmButton: false });
+    } catch(err) { 
+        Swal.fire({ icon: 'error', title: 'Gagal', text: err.message });
+    } finally { 
+        setLoading(false); 
+    }
   };
 
   const openSession = async (session) => {
@@ -111,7 +147,11 @@ function StockOpnamePage() {
         setActiveSession(res.session);
         setItems(res.items);
         setView("detail");
-    } catch(err) { alert(err.message); } finally { setLoading(false); }
+    } catch(err) { 
+        Swal.fire({ icon: 'error', title: 'Gagal', text: err.message });
+    } finally { 
+        setLoading(false); 
+    }
   };
 
   const handleVerify = async (item, status) => {
@@ -132,18 +172,33 @@ function StockOpnamePage() {
         }));
     } catch(err) {
         setItems(oldItems);
-        alert("Gagal update");
+        Swal.fire({ icon: 'error', title: 'Gagal', text: 'Gagal update status item.' });
     }
   };
 
   const handleFinalize = async () => {
-    if(!confirm("Yakin finalisasi audit ini?")) return;
-    try {
-        await finalizeOpname(activeSession.id);
-        alert("Audit Selesai!");
-        setView("list");
-        loadData();
-    } catch(err) { alert(err.message); }
+    // Pakai SweetAlert Konfirmasi
+    const result = await Swal.fire({
+        title: 'Finalisasi Audit?',
+        text: "Setelah difinalisasi, data tidak bisa diubah lagi.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#3085d6',
+        cancelButtonColor: '#d33',
+        confirmButtonText: 'Ya, Selesai!',
+        cancelButtonText: 'Batal'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            await finalizeOpname(activeSession.id);
+            Swal.fire('Selesai!', 'Audit telah berhasil diselesaikan.', 'success');
+            setView("list");
+            loadData();
+        } catch(err) { 
+            Swal.fire({ icon: 'error', title: 'Gagal', text: err.message });
+        }
+    }
   };
 
   // --- RENDER DETAIL ---
@@ -193,12 +248,10 @@ function StockOpnamePage() {
                         <button onClick={() => setIsScanning(false)} className="text-slate-400 hover:text-white">Tutup ✕</button>
                     </div>
                     
-                    {/* --- PERBAIKAN DI SINI --- */}
-                    {/* Hapus 'bg-black', ganti bg-gray-100 agar tombol izin terlihat */}
+                    {/* AREA KAMERA */}
                     <div className="p-4 bg-gray-100">
                         <div id="reader" className="w-full"></div>
                     </div>
-                    {/* ------------------------- */}
                     
                     <div className="p-4 text-center text-sm text-slate-500">
                         Arahkan kamera ke QR Code Aset.
@@ -220,7 +273,6 @@ function StockOpnamePage() {
 
         {/* TABEL ITEM */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-             {/* ... Tabel sama seperti sebelumnya ... */}
              <table className="w-full text-sm text-left">
                 <thead className="bg-slate-50 text-slate-600 font-bold uppercase text-xs border-b">
                     <tr>

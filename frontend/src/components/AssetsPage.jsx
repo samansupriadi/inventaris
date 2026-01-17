@@ -1,6 +1,7 @@
 // src/components/AssetsPage.jsx
 import AssetTable from "./AssetTable";
 import { API_BASE_URL } from "../api";
+import { hasPermission } from "../utils/auth";
 
 function AssetsPage({
   assets,
@@ -40,16 +41,11 @@ function AssetsPage({
   onOpenAddModal,
   onEditAsset,
   onDeleteAsset,
+  userPermissions = [],
 }) {
-  // assets di sini = semua aset yang SUDAH difilter (dari App)
-
-  // 🔢 Pagination (ambil aset untuk halaman aktif)
   const startIndex = totalItems === 0 ? 0 : (page - 1) * pageSize;
   const endIndex = Math.min(startIndex + pageSize, totalItems);
   const pageAssets = assets.slice(startIndex, endIndex);
-
-  // (Variabel statistik dihapus karena sudah dipindah ke Dashboard)
-
   return (
     <div className="space-y-6 font-sans animate-fade-in">
       {/* Header + tombol kanan */}
@@ -95,14 +91,15 @@ function AssetsPage({
             Export Data
           </button>
 
-          {/* TOMBOL TAMBAH ASET (HIJAU SF) */}
-          <button
-            type="button"
-            onClick={onOpenAddModal}
-            className="px-4 py-2 text-xs md:text-sm rounded-lg bg-[#009846] text-white hover:bg-[#007033] shadow-md hover:shadow-lg transition-all font-medium flex items-center gap-2"
-          >
-            <span>+</span> Tambah Aset
-          </button>
+          {hasPermission('create_assets') && (
+            <button
+              type="button"
+              onClick={onOpenAddModal}
+              className="px-4 py-2 text-xs md:text-sm rounded-lg bg-[#009846] text-white hover:bg-[#007033] shadow-md hover:shadow-lg transition-all font-medium flex items-center gap-2"
+            >
+              <span>+</span> Tambah Aset
+            </button>
+          )}
         </div>
       </div>
 
@@ -126,9 +123,7 @@ function AssetsPage({
           >
             <option value="">Semua kondisi</option>
             <option value="baik">Baik</option>
-            <option value="cukup">Cukup</option>
             <option value="rusak">Rusak</option>
-            <option value="maintenance">Maintenance</option>
             <option value="hilang">Hilang</option>
           </select>
 
@@ -156,6 +151,7 @@ function AssetsPage({
             <option value="available">Tersedia</option>
             <option value="borrowed">Dipinjam</option>
             <option value="maintenance">Maintenance</option>
+            <option value="rusak">Rusak</option>
             <option value="lost">Hilang</option>
           </select>
         </div>
@@ -222,6 +218,7 @@ function AssetsPage({
         onBulkPrintQr={onBulkPrintQr}
         onEdit={onEditAsset}
         onDelete={onDeleteAsset}
+        userPermissions={userPermissions}
       />
 
       {/* PAGINATION */}

@@ -1,13 +1,17 @@
 // backend/routes/auditRoutes.js
 import express from "express";
 import pool from "../db.js";
-// import verifyToken from "../middleware/authMiddleware.js"; // Pasang ini nanti jika sudah ada auth
+// Import middleware autentikasi
+import { verifyToken, authorize } from "../middleware/authMiddleware.js"; 
 
 const router = express.Router();
 
-router.get("/", async (req, res) => {
+// Proteksi route ini!
+// 1. verifyToken: Pastikan user sudah login
+// 2. authorize('view_audit_logs'): (Opsional) Pastikan user punya permission untuk lihat audit log
+// Jika belum ada permission 'view_audit_logs' di database, cukup pakai verifyToken dulu atau buat permission baru.
+router.get("/", verifyToken, async (req, res) => {
   try {
-    // Join dengan tabel users biar muncul nama, bukan cuma ID
     const result = await pool.query(`
       SELECT 
         l.*, 
@@ -16,7 +20,7 @@ router.get("/", async (req, res) => {
       FROM audit_logs l
       LEFT JOIN users u ON l.user_id = u.id
       ORDER BY l.created_at DESC
-      LIMIT 100 -- Batasi 100 terakhir agar ringan
+      LIMIT 100 
     `);
     
     res.json(result.rows);

@@ -26,11 +26,14 @@ import importRoutes from "./routes/importRoutes.js";
 import opnameRoutes from "./routes/opnameRoutes.js";
 import auditRoutes from "./routes/auditRoutes.js";
 import reportRouter from "./routes/reportRoutes.js";
+import maintenanceRoutes from "./routes/maintenanceRoutes.js"; 
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 4000;
+app.use(express.json({ limit: "10mb" })); 
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // 1. SECURITY HEADERS
 app.use(helmet());
@@ -92,6 +95,8 @@ app.use("/api/import", importRoutes);
 app.use("/api/opname", opnameRoutes);
 app.use("/api/audit-logs", auditRoutes);
 app.use("/api/reports", reportRouter);
+app.use("/api/maintenances", maintenanceRoutes);
+
 // listen
 app.listen(port, () => {
   console.log(`API server running on port ${port}`);

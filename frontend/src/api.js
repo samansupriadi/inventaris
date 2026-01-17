@@ -8,17 +8,20 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localho
  * 4. Error Handling
  */
 async function fetchWithAuth(endpoint, options = {}) {
-  const defaultHeaders = {
-    "Content-Type": "application/json",
-  };
+  // Ambil headers bawaan jika ada
+  const headers = { ...options.headers };
+
+  // 👇 LOGIC BARU: Deteksi Tipe Data
+  // Jika body ADALAH FormData (File), JANGAN set Content-Type (biar browser yang atur boundary)
+  // Jika body BUKAN FormData (JSON biasa), set Content-Type: application/json
+  if (!(options.body instanceof FormData) && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
 
   const config = {
     ...options,
-    headers: {
-      ...defaultHeaders,
-      ...options.headers,
-    },
-    // PENTING: Ini kunci agar Cookie dikirim ke backend
+    headers: headers,
+    // 👇 PENTING: Kunci agar Cookie dikirim ke backend
     credentials: "include", 
   };
 
@@ -119,41 +122,71 @@ export async function uploadAssetReceipt(id, file) {
   return fetchUpload(`/api/assets/${id}/receipt`, "receipt", file);
 }
 
-
 // ==================================================================
-//  LOANS (PEMINJAMAN)
+//  LOANS (PEMINJAMAN) - UPDATE SUPPORT FOTO
 // ==================================================================
 
 export async function fetchLoans() {
   return fetchWithAuth("/api/loans");
 }
 
+
 export async function borrowAsset(assetId, payload) {
-  return fetchWithAuth(`/api/assets/${assetId}/borrow`, {
+  const formData = new FormData();
+  
+  formData.append("borrower_user_id", payload.borrower_user_id);
+  if (payload.usage_location_id) formData.append("usage_location_id", payload.usage_location_id);
+  if (payload.due_date) formData.append("due_date", payload.due_date);
+  formData.append("notes", payload.notes || "");
+  formData.append("detail_location", payload.detail_location || "");
+  formData.append("condition_now", payload.condition_now || "baik");
+
+  if (payload.photo) {
+    formData.append("photo", payload.photo);
+  }
+
+  const response = await fetch(`${API_BASE_URL}/api/assets/${assetId}/borrow`, {
     method: "POST",
-    body: JSON.stringify({
-      borrower_user_id: payload.borrower_user_id,
-      usage_location_id: payload.usage_location_id || null,
-      due_date: payload.due_date || null,
-      notes: payload.notes || "",
-      detail_location: payload.detail_location || "",
-      condition_now: payload.condition_now || "baik",
-    }),
+    credentials: "include", 
+    body: formData,
   });
+
+  if (!response.ok) {
+     const err = await response.json();
+     throw new Error(err.message || "Gagal memproses peminjaman");
+  }
+  return response.json();
 }
 
 export async function returnAsset(assetId, payload) {
-  return fetchWithAuth(`/api/assets/${assetId}/return`, {
+  const formData = new FormData();
+
+  formData.append("condition_after", payload.condition_after);
+  if (payload.return_location_id) formData.append("return_location_id", payload.return_location_id);
+  formData.append("return_detail_location", payload.return_detail_location || "");
+  formData.append("notes_return", payload.notes_return || "");
+
+  if (payload.photo) {
+    console.log("📸 [API] Mengirim Foto:", payload.photo.name, payload.photo.size); // <--- CEK CONSOLE BROWSER
+    formData.append("photo", payload.photo);
+  } else {
+    console.warn("⚠️ [API] Tidak ada foto yang dikirim di payload");
+  }
+
+  const response = await fetch(`${API_BASE_URL}/api/assets/${assetId}/return`, {
     method: "POST",
-    body: JSON.stringify({
-      condition_after: payload.condition_after,
-      update_asset_location: payload.update_asset_location,
-      return_location_id: payload.return_location_id || null,
-      return_detail_location: payload.return_detail_location || "",
-      notes_return: payload.notes_return || ""
-    }),
+    credentials: "include", 
+    body: formData,
   });
+
+  if (!response.ok) {
+     const err = await response.json();
+     throw new Error(err.message || "Gagal memproses pengembalian");
+  }
+  return response.json();
 }
+
+
 
 export async function uploadLoanBeforePhoto(loanId, file) {
   return fetchUpload(`/api/loans/${loanId}/before-photo`, "before_photo", file);
@@ -330,3 +363,58 @@ export async function updateOpnameItem(itemId, data) {
 export async function finalizeOpname(id) {
   return fetchWithAuth(`/api/opname/${id}/finalize`, { method: "POST" });
 }
+
+
+// --- MAINTENANCE API ---
+
+export async function fetchMaintenances() {
+  return fetchWithAuth("/api/maintenances");
+}
+
+export async function fetchMaintenanceByAsset(assetId) {
+  return fetchWithAuth(`/api/maintenances/asset/${assetId}`);
+}
+
+export async function createMaintenance(payload) {
+  return fetchWithAuth("/api/maintenances", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateMaintenance(id, payload) {
+  const isFormData = payload instanceof FormData;
+
+  return fetchWithAuth(`/api/maintenances/${id}`, {
+    method: "PUT",
+    // Kalau FormData kirim langsung, kalau JSON stringify dulu
+    body: isFormData ? payload : JSON.stringify(payload),
+  });
+}
+
+
+export const fetchCurrentUser = async () => {
+  try {
+    // Kita panggil endpoint /me yang baru dibuat
+    // Pastikan 'credentials: include' agar cookie HttpOnly terkirim
+    const response = await fetch(`${API_BASE_URL}/auth/me`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      // PENTING: Opsi ini wajib ada agar browser mengirim Cookie Token
+      credentials: "include", 
+    });
+
+    if (!response.ok) {
+      // Jika 401/403, berarti session habis
+      throw new Error("Session expired");
+    }
+
+    const data = await response.json();
+    return data.user; // Kembalikan object user baru dari DB
+  } catch (error) {
+    console.warn("Session check failed:", error);
+    throw error;
+  }
+};
