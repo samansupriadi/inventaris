@@ -4,6 +4,7 @@ import { Html5QrcodeScanner } from "html5-qrcode"; // Library Scanner
 import { playBeep } from "../utils/sound"; // Helper Suara
 import { fetchLocations, createOpnameSession, fetchOpnameSessions, fetchOpnameDetail, updateOpnameItem, finalizeOpname } from "../api";
 import Swal from "sweetalert2"; // 👈 Import SweetAlert2
+import { hasPermission } from "../utils/auth";
 
 function StockOpnamePage() {
   const [view, setView] = useState("list");
@@ -204,7 +205,9 @@ function StockOpnamePage() {
   // --- RENDER DETAIL ---
   if (view === "detail" && activeSession) {
     const progress = Math.round((activeSession.scanned_assets / activeSession.total_assets) * 100) || 0;
-    
+    const canExecute = hasPermission('execute_opname'); 
+    const canFinalize = hasPermission('finalize_opname');
+
     return (
       <div className="space-y-6 animate-fade-in relative">
         
@@ -220,7 +223,7 @@ function StockOpnamePage() {
             
             <div className="flex gap-2">
                 {/* TOMBOL SCANNER (Hanya muncul jika belum final) */}
-                {activeSession.status !== 'Finalized' && (
+                {activeSession.status !== 'Finalized' && canExecute && (
                     <button 
                         onClick={() => setIsScanning(true)} 
                         className="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg shadow-blue-900/20 flex items-center gap-2"
@@ -230,7 +233,7 @@ function StockOpnamePage() {
                     </button>
                 )}
                 
-                {activeSession.status !== 'Finalized' && (
+                {activeSession.status !== 'Finalized' && canFinalize && (
                     <button onClick={handleFinalize} className="px-5 py-2 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 shadow-lg shadow-green-900/20">
                         Selesai
                     </button>
@@ -297,7 +300,7 @@ function StockOpnamePage() {
                                 </span>
                             </td>
                             <td className="p-4 text-center">
-                                {activeSession.status !== 'Finalized' && (
+                                {activeSession.status !== 'Finalized' && canExecute && (
                                     <div className="flex justify-center gap-2">
                                         <button onClick={() => handleVerify(item, 'Matched')} className={`px-3 py-1.5 rounded border text-xs font-bold ${item.status === 'Matched' ? 'bg-green-600 text-white' : 'hover:bg-green-50 text-green-600 border-green-200'}`}>ADA</button>
                                         <button onClick={() => handleVerify(item, 'Missing')} className={`px-3 py-1.5 rounded border text-xs font-bold ${item.status === 'Missing' ? 'bg-red-600 text-white' : 'hover:bg-red-50 text-red-600 border-red-200'}`}>HILANG</button>
@@ -341,24 +344,25 @@ function StockOpnamePage() {
                     </div>
                 ))}
             </div>
-
-            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm sticky top-6 h-fit">
-                <h3 className="font-bold text-slate-800 mb-4">Mulai Audit Baru</h3>
-                <form onSubmit={handleCreate} className="space-y-4">
-                    <div>
-                        <label className="block text-xs font-bold text-slate-500 mb-1">Judul Kegiatan</label>
-                        <input className="w-full border p-2 rounded text-sm" placeholder="Contoh: Audit Q4 Gudang A" value={newTitle} onChange={e => setNewTitle(e.target.value)} />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold text-slate-500 mb-1">Target Lokasi</label>
-                        <select className="w-full border p-2 rounded text-sm" value={selectedLoc} onChange={e => setSelectedLoc(e.target.value)}>
-                            <option value="">-- Pilih Lokasi --</option>
-                            {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                        </select>
-                    </div>
-                    <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-bold hover:bg-blue-700 shadow-lg shadow-blue-900/20">{loading ? "Memproses..." : "Buat Sesi & Mulai"}</button>
-                </form>
-            </div>
+            {hasPermission('create_opname') && (
+                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm sticky top-6 h-fit">
+                    <h3 className="font-bold text-slate-800 mb-4">Mulai Audit Baru</h3>
+                    <form onSubmit={handleCreate} className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 mb-1">Judul Kegiatan</label>
+                            <input className="w-full border p-2 rounded text-sm" placeholder="Contoh: Audit Q4 Gudang A" value={newTitle} onChange={e => setNewTitle(e.target.value)} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 mb-1">Target Lokasi</label>
+                            <select className="w-full border p-2 rounded text-sm" value={selectedLoc} onChange={e => setSelectedLoc(e.target.value)}>
+                                <option value="">-- Pilih Lokasi --</option>
+                                {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                            </select>
+                        </div>
+                        <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-bold hover:bg-blue-700 shadow-lg shadow-blue-900/20">{loading ? "Memproses..." : "Buat Sesi & Mulai"}</button>
+                    </form>
+                </div>
+            )}
         </div>
     </div>
   );

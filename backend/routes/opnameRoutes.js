@@ -5,8 +5,11 @@ import { verifyToken, authorize } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-// 1. BUAT SESI BARU (Start Audit)
-router.post("/", verifyToken, authorize("view_assets"), async (req, res) => {
+// Pasang Satpam Global
+router.use(verifyToken);
+
+// 1. BUAT SESI BARU -> Butuh 'create_opname'
+router.post("/", authorize("create_opname"), async (req, res) => {
   const { title, location_id } = req.body;
   const client = await pool.connect();
 
@@ -56,8 +59,8 @@ router.post("/", verifyToken, authorize("view_assets"), async (req, res) => {
   }
 });
 
-// 2. GET LIST SESI
-router.get("/", verifyToken, async (req, res) => {
+// 2. GET LIST SESI -> Butuh 'view_opname'
+router.get("/", authorize("view_opname"), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT s.*, l.name as location_name, u.name as auditor_name 
@@ -72,8 +75,8 @@ router.get("/", verifyToken, async (req, res) => {
   }
 });
 
-// 3. GET DETAIL ITEM AUDIT
-router.get("/:id", verifyToken, async (req, res) => {
+// 3. GET DETAIL ITEM AUDIT -> Butuh 'view_opname'
+router.get("/:id", authorize("view_opname"), async (req, res) => {
   try {
     // Header
     const sessionRes = await pool.query(
@@ -99,8 +102,8 @@ router.get("/:id", verifyToken, async (req, res) => {
   }
 });
 
-// 4. VERIFIKASI ITEM (SCAN ACTION)
-router.put("/items/:itemId", verifyToken, async (req, res) => {
+// 4. VERIFIKASI ITEM (SCAN ACTION) -> Butuh 'execute_opname'
+router.put("/items/:itemId", authorize("execute_opname"), async (req, res) => {
   const { status, condition, notes } = req.body; // status: 'Matched' / 'Missing'
   
   try {
@@ -112,7 +115,6 @@ router.put("/items/:itemId", verifyToken, async (req, res) => {
     );
     
     // Update progress count di header
-    // (Logic sederhana: hitung ulang yg statusnya != Missing)
     const sessionIdRes = await pool.query(`SELECT opname_session_id FROM opname_items WHERE id = $1`, [req.params.itemId]);
     const sessionId = sessionIdRes.rows[0].opname_session_id;
     
@@ -129,8 +131,8 @@ router.put("/items/:itemId", verifyToken, async (req, res) => {
   }
 });
 
-// 5. FINALIZE (Tutup Buku)
-router.post("/:id/finalize", verifyToken, authorize("edit_assets"), async (req, res) => {
+// 5. FINALIZE (Tutup Buku) -> Butuh 'finalize_opname'
+router.post("/:id/finalize", authorize("finalize_opname"), async (req, res) => {
     const client = await pool.connect();
     try {
         await client.query("BEGIN");
@@ -141,9 +143,7 @@ router.post("/:id/finalize", verifyToken, authorize("edit_assets"), async (req, 
             [req.user.id, req.params.id]
         );
 
-        // OPTIONAL: Update master data asset berdasarkan temuan?
-        // Untuk keamanan, biasanya ERP High Class TIDAK otomatis update master, 
-        // tapi memberi laporan selisih. Tapi kalau mau update otomatis (misal kondisi rusak), bisa tambah logic di sini.
+        // Disini bisa ditambahkan logic update master data jika diperlukan
 
         await client.query("COMMIT");
         res.json({ success: true, message: "Stock Opname Selesai & Dikunci." });
