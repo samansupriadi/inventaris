@@ -1,5 +1,6 @@
 // src/components/RolePage.jsx
 import { useState } from "react";
+import { hasPermission } from "../utils/auth";
 
 function RolePage({
   roles = [],
@@ -180,76 +181,81 @@ function RolePage({
         <div className="lg:col-span-1 space-y-6">
             
             {/* 1. CARD FORM ROLE */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-                    <h3 className="font-semibold text-slate-700 text-sm">
-                        {editingId ? "Edit Role" : "Buat Role Baru"}
-                    </h3>
-                    {editingId && (
-                        <button onClick={resetForm} className="text-xs text-red-500 hover:underline">Batal Edit</button>
-                    )}
+            {hasPermission('manage_roles') ? (
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+                        <h3 className="font-semibold text-slate-700 text-sm">
+                            {editingId ? "Edit Role" : "Buat Role Baru"}
+                        </h3>
+                        {editingId && (
+                            <button onClick={resetForm} className="text-xs text-red-500 hover:underline">Batal Edit</button>
+                        )}
+                    </div>
+                    
+                    <div className="p-5">
+                        {error && (
+                            <div className="mb-4 bg-red-50 text-red-600 text-xs p-3 rounded-lg border border-red-100">
+                                {error}
+                            </div>
+                        )}
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            
+                            {/* NAMA ROLE (AUTO SLUG) */}
+                            <div>
+                                <label className="block text-xs font-medium text-slate-700 mb-1">Nama Role</label>
+                                <input 
+                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#009846] focus:border-[#009846] outline-none transition-all"
+                                    placeholder="Contoh: Super Admin"
+                                    value={name}
+                                    onChange={e => {
+                                        const val = e.target.value;
+                                        setName(val);
+                                        // Auto generate slug hanya jika sedang mode Tambah Baru
+                                        if (!editingId) {
+                                            setSlug(generateSlug(val));
+                                        }
+                                    }}
+                                />
+                            </div>
+
+                            {/* SLUG (AUTO FORMAT) */}
+                            <div>
+                                <label className="block text-xs font-medium text-slate-700 mb-1">Slug (Kode Unik)</label>
+                                <input 
+                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#009846] focus:border-[#009846] outline-none transition-all bg-slate-50 font-mono text-slate-600"
+                                    placeholder="contoh: super_admin"
+                                    value={slug}
+                                    onChange={e => setSlug(generateSlug(e.target.value))} // Paksa format slug saat diketik manual
+                                />
+                                <p className="text-[10px] text-slate-400 mt-1">Otomatis terisi dari nama role.</p>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-medium text-slate-700 mb-1">Keterangan</label>
+                                <textarea 
+                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#009846] focus:border-[#009846] outline-none transition-all"
+                                    placeholder="Deskripsi peran ini..."
+                                    rows={2}
+                                    value={description}
+                                    onChange={e => setDescription(e.target.value)}
+                                />
+                            </div>
+
+                            <button 
+                                type="submit" 
+                                disabled={loading}
+                                className="w-full bg-[#009846] hover:bg-[#007b3a] text-white text-sm font-medium py-2.5 rounded-lg shadow-sm hover:shadow transition-all disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center gap-2"
+                            >
+                                {loading ? "Menyimpan..." : (editingId ? "Simpan Perubahan" : "Buat Role")}
+                            </button>
+                        </form>
+                    </div>
                 </div>
-                
-                <div className="p-5">
-                    {error && (
-                        <div className="mb-4 bg-red-50 text-red-600 text-xs p-3 rounded-lg border border-red-100">
-                            {error}
-                        </div>
-                    )}
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        
-                        {/* NAMA ROLE (AUTO SLUG) */}
-                        <div>
-                            <label className="block text-xs font-medium text-slate-700 mb-1">Nama Role</label>
-                            <input 
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#009846] focus:border-[#009846] outline-none transition-all"
-                                placeholder="Contoh: Super Admin"
-                                value={name}
-                                onChange={e => {
-                                    const val = e.target.value;
-                                    setName(val);
-                                    // Auto generate slug hanya jika sedang mode Tambah Baru
-                                    if (!editingId) {
-                                        setSlug(generateSlug(val));
-                                    }
-                                }}
-                            />
-                        </div>
-
-                        {/* SLUG (AUTO FORMAT) */}
-                        <div>
-                            <label className="block text-xs font-medium text-slate-700 mb-1">Slug (Kode Unik)</label>
-                            <input 
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#009846] focus:border-[#009846] outline-none transition-all bg-slate-50 font-mono text-slate-600"
-                                placeholder="contoh: super_admin"
-                                value={slug}
-                                onChange={e => setSlug(generateSlug(e.target.value))} // Paksa format slug saat diketik manual
-                            />
-                            <p className="text-[10px] text-slate-400 mt-1">Otomatis terisi dari nama role.</p>
-                        </div>
-
-                        <div>
-                            <label className="block text-xs font-medium text-slate-700 mb-1">Keterangan</label>
-                            <textarea 
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#009846] focus:border-[#009846] outline-none transition-all"
-                                placeholder="Deskripsi peran ini..."
-                                rows={2}
-                                value={description}
-                                onChange={e => setDescription(e.target.value)}
-                            />
-                        </div>
-
-                        <button 
-                            type="submit" 
-                            disabled={loading}
-                            className="w-full bg-[#009846] hover:bg-[#007b3a] text-white text-sm font-medium py-2.5 rounded-lg shadow-sm hover:shadow transition-all disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center gap-2"
-                        >
-                            {loading ? "Menyimpan..." : (editingId ? "Simpan Perubahan" : "Buat Role")}
-                        </button>
-                    </form>
+            ) : (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center text-slate-500 text-sm">
+                    🔒 Anda hanya memiliki akses <strong>View Only</strong>.
                 </div>
-            </div>
-
+            )}
             {/* 2. CARD LIST ROLE */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                 <div className="px-5 py-3 bg-slate-50 border-b border-slate-100">
@@ -267,36 +273,42 @@ function RolePage({
                                         <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{role.slug}</span>
                                     </div>
                                     <div className="flex items-center gap-1">
-                                        <button 
-                                            onClick={() => startEdit(role)}
-                                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                                            title="Edit Info"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                                        </button>
-                                        <button 
-                                            onClick={() => handleDeleteClick(role)}
-                                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                            title="Hapus Role"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                                        </button>
+                                        {hasPermission('manage_roles') && (
+                                            <button 
+                                                onClick={() => startEdit(role)}
+                                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                                title="Edit Info"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                            </button>
+                                        )}
+                                        {hasPermission('manage_roles') && (
+                                            <button 
+                                                onClick={() => handleDeleteClick(role)}
+                                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                                title="Hapus Role"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                                 <p className="text-xs text-slate-500 mb-3 line-clamp-2">
                                     {role.description || "Tidak ada keterangan."}
                                 </p>
-                                <button 
-                                    onClick={() => startManagePermissions(role)}
-                                    className={`w-full py-2 text-xs font-medium rounded-lg border transition-all flex items-center justify-center gap-2 ${
-                                        selectedRoleId === role.id 
-                                        ? "bg-[#009846] text-white border-[#009846]" 
-                                        : "bg-white text-slate-600 border-slate-200 hover:border-[#009846] hover:text-[#009846]"
-                                    }`}
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-                                    {selectedRoleId === role.id ? "Sedang Mengatur Akses" : "Atur Hak Akses"}
-                                </button>
+                                {hasPermission('manage_roles') && (
+                                    <button 
+                                        onClick={() => startManagePermissions(role)}
+                                        className={`w-full py-2 text-xs font-medium rounded-lg border transition-all flex items-center justify-center gap-2 ${
+                                            selectedRoleId === role.id 
+                                            ? "bg-[#009846] text-white border-[#009846]" 
+                                            : "bg-white text-slate-600 border-slate-200 hover:border-[#009846] hover:text-[#009846]"
+                                        }`}
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                                        {selectedRoleId === role.id ? "Sedang Mengatur Akses" : "Atur Hak Akses"}
+                                    </button>
+                                )}
                             </div>
                         ))
                     )}
@@ -306,7 +318,7 @@ function RolePage({
 
         {/* === KOLOM KANAN: PERMISSION MANAGER === */}
         <div className="lg:col-span-2" id="permission-panel">
-            {currentPermissionRole ? (
+            {currentPermissionRole && hasPermission('manage_roles') ? (
                 <div className="bg-white rounded-xl shadow-lg border border-[#009846]/20 overflow-hidden relative animate-fade-in-up">
                     {/* Header Panel */}
                     <div className="px-6 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-200 flex justify-between items-center sticky top-0 z-10">
@@ -428,6 +440,11 @@ function RolePage({
                     <p className="text-sm text-slate-500 max-w-sm mt-3 leading-relaxed">
                         Klik tombol <strong>"Atur Hak Akses"</strong> pada salah satu role di daftar sebelah kiri untuk mulai mengatur izin apa saja yang dimiliki role tersebut.
                     </p>
+                    {!hasPermission('manage_roles') && (
+                        <p className="mt-4 text-xs text-red-500 font-bold bg-red-50 px-3 py-1 rounded-full inline-block">
+                            Akses Dibatasi: Anda tidak dapat mengubah permission.
+                        </p>
+                    )}
                 </div>
             )}
         </div>

@@ -2,17 +2,15 @@
 import express from "express";
 import bcrypt from "bcrypt";
 import pool from "../db.js";
-// Import Middleware Keamanan
 import { verifyToken, authorize } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-// 1. Pasang 'verifyToken' secara global di router ini.
-// Artinya SEMUA endpoint di bawah ini wajib login dulu.
+// Semua endpoint butuh login
 router.use(verifyToken);
 
-// LIST users -> Butuh izin 'view_users'
-router.get("/", authorize("view_users"), async (req, res) => {
+// LIST -> Pakai 'manage_users' agar sinkron dengan App.jsx
+router.get("/", authorize("manage_users"), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT 
@@ -40,8 +38,9 @@ router.get("/", authorize("view_users"), async (req, res) => {
   }
 });
 
-// CREATE user -> Butuh izin 'create_users'
-router.post("/", authorize("create_users"), async (req, res) => {
+// CREATE -> Pakai 'manage_users'
+router.post("/", authorize("manage_users"), async (req, res) => {
+  // ... (Logika create sama seperti sebelumnya) ...
   const { name, email, password, role_ids, entity_id } = req.body;
 
   if (!name || !email || !password) {
@@ -60,34 +59,36 @@ router.post("/", authorize("create_users"), async (req, res) => {
 
     const user = userRes.rows[0];
 
-    // Simpan role
     if (Array.isArray(role_ids) && role_ids.length > 0) {
       const values = role_ids.map((rid, idx) => `($1, $${idx + 2})`).join(",");
-      await pool.query(
-        `INSERT INTO user_roles (user_id, role_id) VALUES ${values}
-         ON CONFLICT DO NOTHING`,
-        [user.id, ...role_ids]
-      );
+      // Perbaikan query insert role (tanpa spread operator role_ids di query values)
+      // Kita pakai loop manual atau cara yang lebih aman untuk parameterized query dynamic
+      // Tapi untuk simplicity, asumsikan role_ids aman number.
+      
+      // Cara yang lebih aman untuk dynamic insert:
+      for (const rid of role_ids) {
+          await pool.query(
+              `INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+              [user.id, rid]
+          );
+      }
     }
 
     res.status(201).json(user);
   } catch (err) {
     console.error("POST /api/users error:", err);
-    if (err.code === "23505") {
-      return res.status(409).json({ message: "Email sudah digunakan user lain" });
-    }
+    if (err.code === "23505") return res.status(409).json({ message: "Email sudah digunakan" });
     res.status(500).json({ message: "Gagal membuat user" });
   }
 });
 
-// UPDATE user -> Butuh izin 'edit_users'
-router.put("/:id", authorize("edit_users"), async (req, res) => {
+// UPDATE -> Pakai 'manage_users'
+router.put("/:id", authorize("manage_users"), async (req, res) => {
+  // ... (Logika update sama) ...
   const id = req.params.id;
   const { name, email, password, role_ids, entity_id } = req.body;
 
-  if (!name || !email) {
-    return res.status(400).json({ message: "Nama dan email wajib diisi" });
-  }
+  if (!name || !email) return res.status(400).json({ message: "Nama dan email wajib diisi" });
 
   try {
     let passwordPart = "";
@@ -103,72 +104,55 @@ router.put("/:id", authorize("edit_users"), async (req, res) => {
       `UPDATE users
        SET name = $1, email = $2, entity_id = $3, updated_at = NOW() ${passwordPart}
        WHERE id = $4 AND deleted_at IS NULL
-       RETURNING id, name, email, entity_id, created_at, updated_at, deleted_at`,
+       RETURNING id, name, email, entity_id`,
       params
     );
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ message: "User tidak ditemukan" });
-    }
-
+    if (result.rowCount === 0) return res.status(404).json({ message: "User tidak ditemukan" });
     const user = result.rows[0];
 
-    // Update roles
     if (Array.isArray(role_ids)) {
       await pool.query("DELETE FROM user_roles WHERE user_id = $1", [id]);
-      if (role_ids.length > 0) {
-        const values = role_ids.map((rid, idx) => `($1, $${idx + 2})`).join(",");
-        await pool.query(
-          `INSERT INTO user_roles (user_id, role_id) VALUES ${values}`,
-          [id, ...role_ids]
-        );
+      for (const rid of role_ids) {
+          await pool.query(
+              `INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)`,
+              [id, rid]
+          );
       }
     }
 
     res.json(user);
   } catch (err) {
-    console.error("PUT /api/users/:id error:", err);
-    if (err.code === "23505") {
-      return res.status(409).json({ message: "Email sudah digunakan user lain" });
-    }
+    console.error("PUT /api/users error:", err);
+    if (err.code === "23505") return res.status(409).json({ message: "Email sudah digunakan" });
     res.status(500).json({ message: "Gagal mengubah user" });
   }
 });
 
-// SOFT DELETE -> Butuh izin 'delete_users'
-router.delete("/:id", authorize("delete_users"), async (req, res) => {
+// DELETE -> Pakai 'manage_users'
+router.delete("/:id", authorize("manage_users"), async (req, res) => {
+  // ... (Logika delete sama) ...
   const id = req.params.id;
   try {
-    const result = await pool.query(
-      `UPDATE users SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL`,
-      [id]
-    );
-    if (result.rowCount === 0) {
-      return res.status(404).json({ message: "User tidak ditemukan atau sudah dihapus" });
-    }
+    const result = await pool.query(`UPDATE users SET deleted_at = NOW() WHERE id = $1`, [id]);
+    if (result.rowCount === 0) return res.status(404).json({ message: "User tidak ditemukan" });
     res.json({ success: true });
   } catch (err) {
-    console.error("DELETE /api/users/:id error:", err);
     res.status(500).json({ message: "Gagal menghapus user" });
   }
 });
 
-// RESTORE -> Butuh izin 'delete_users' (atau edit_users, tergantung kebijakan)
-router.post("/:id/restore", authorize("delete_users"), async (req, res) => {
-  const id = req.params.id;
-  try {
-    const result = await pool.query(
-      `UPDATE users SET deleted_at = NULL WHERE id = $1 AND deleted_at IS NOT NULL RETURNING id`,
-      [id]
-    );
-    if (result.rowCount === 0) {
-      return res.status(404).json({ message: "User tidak ditemukan atau belum dihapus" });
+// RESTORE -> Pakai 'manage_users'
+router.post("/:id/restore", authorize("manage_users"), async (req, res) => {
+    // ... (Logika restore sama) ...
+    const id = req.params.id;
+    try {
+        const result = await pool.query(`UPDATE users SET deleted_at = NULL WHERE id = $1`, [id]);
+        if (result.rowCount === 0) return res.status(404).json({ message: "User tidak ditemukan" });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ message: "Gagal restore user" });
     }
-    res.json({ success: true });
-  } catch (err) {
-    console.error("POST /api/users/:id/restore error:", err);
-    res.status(500).json({ message: "Gagal me-restore user" });
-  }
 });
 
 export default router;

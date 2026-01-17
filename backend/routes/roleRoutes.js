@@ -8,8 +8,8 @@ const router = express.Router();
 // Wajib Login
 router.use(verifyToken);
 
-// GET Roles -> Butuh 'view_roles'
-router.get("/", authorize("view_roles"), async (req, res) => {
+// GET Roles -> Ganti jadi 'manage_roles'
+router.get("/", authorize("manage_roles"), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT r.*,
@@ -18,11 +18,11 @@ router.get("/", authorize("view_roles"), async (req, res) => {
               DISTINCT jsonb_build_object('id', p.id, 'name', p.name, 'slug', p.slug, 'group_name', p.group_name)
             ) FILTER (WHERE p.id IS NOT NULL), '[]'
           ) AS permissions
-       FROM roles r
-       LEFT JOIN role_permissions rp ON rp.role_id = r.id
-       LEFT JOIN permissions p ON p.id = rp.permission_id
-       GROUP BY r.id
-       ORDER BY r.name ASC`
+        FROM roles r
+        LEFT JOIN role_permissions rp ON rp.role_id = r.id
+        LEFT JOIN permissions p ON p.id = rp.permission_id
+        GROUP BY r.id
+        ORDER BY r.name ASC`
     );
     res.json(result.rows);
   } catch (err) {
@@ -31,8 +31,8 @@ router.get("/", authorize("view_roles"), async (req, res) => {
   }
 });
 
-// CREATE Role -> Butuh 'create_roles'
-router.post("/", authorize("create_roles"), async (req, res) => {
+// CREATE Role -> Ganti jadi 'manage_roles'
+router.post("/", authorize("manage_roles"), async (req, res) => {
   const { name, slug, description, permission_ids } = req.body;
 
   if (!name || !slug) {
@@ -50,11 +50,13 @@ router.post("/", authorize("create_roles"), async (req, res) => {
     const role = roleRes.rows[0];
 
     if (Array.isArray(permission_ids) && permission_ids.length > 0) {
-      const values = permission_ids.map((pid, idx) => `($1, $${idx + 2})`).join(",");
-      await client.query(
-        `INSERT INTO role_permissions (role_id, permission_id) VALUES ${values} ON CONFLICT DO NOTHING`,
-        [role.id, ...permission_ids]
-      );
+      // Loop manual agar aman dari SQL Injection string concatenation
+      for (const pid of permission_ids) {
+          await client.query(
+             `INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+             [role.id, pid]
+          );
+      }
     }
 
     await client.query("COMMIT");
@@ -69,8 +71,8 @@ router.post("/", authorize("create_roles"), async (req, res) => {
   }
 });
 
-// UPDATE Role -> Butuh 'edit_roles'
-router.put("/:id", authorize("edit_roles"), async (req, res) => {
+// UPDATE Role -> Ganti jadi 'manage_roles'
+router.put("/:id", authorize("manage_roles"), async (req, res) => {
   const id = req.params.id;
   const { name, slug, description, permission_ids } = req.body;
 
@@ -92,12 +94,13 @@ router.put("/:id", authorize("edit_roles"), async (req, res) => {
 
     if (Array.isArray(permission_ids)) {
       await client.query("DELETE FROM role_permissions WHERE role_id = $1", [id]);
-      if (permission_ids.length > 0) {
-        const values = permission_ids.map((pid, idx) => `($1, $${idx + 2})`).join(",");
-        await client.query(
-          `INSERT INTO role_permissions (role_id, permission_id) VALUES ${values} ON CONFLICT DO NOTHING`,
-          [id, ...permission_ids]
-        );
+      
+      // Loop insert aman
+      for (const pid of permission_ids) {
+          await client.query(
+             `INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+             [id, pid]
+          );
       }
     }
 
@@ -112,8 +115,8 @@ router.put("/:id", authorize("edit_roles"), async (req, res) => {
   }
 });
 
-// DELETE Role -> Butuh 'delete_roles'
-router.delete("/:id", authorize("delete_roles"), async (req, res) => {
+// DELETE Role -> Ganti jadi 'manage_roles'
+router.delete("/:id", authorize("manage_roles"), async (req, res) => {
   const id = req.params.id;
   try {
     const result = await pool.query("DELETE FROM roles WHERE id = $1", [id]);

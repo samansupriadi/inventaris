@@ -828,7 +828,7 @@ function App() {
                 )}
 
                 {activeMenu === "permissions" && (
-                  <ProtectedRoute permission="view_permissions">
+                  <ProtectedRoute permission="manage_roles">
                     <PermissionPage
                       permissions={permissions}
                       onCreate={handleCreatePermission}

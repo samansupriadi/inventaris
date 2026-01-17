@@ -7,8 +7,8 @@ const router = express.Router();
 
 router.use(verifyToken);
 
-// LIST Permissions -> Butuh 'view_permissions'
-router.get("/", authorize("view_permissions"), async (req, res) => {
+// LIST Permissions -> Ganti jadi 'manage_roles'
+router.get("/", authorize("manage_roles"), async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM permissions ORDER BY group_name NULLS LAST, name ASC`
@@ -20,8 +20,8 @@ router.get("/", authorize("view_permissions"), async (req, res) => {
   }
 });
 
-// CREATE Permission -> Butuh 'create_permissions'
-router.post("/", authorize("create_permissions"), async (req, res) => {
+// CREATE Permission -> Ganti jadi 'manage_roles'
+router.post("/", authorize("manage_roles"), async (req, res) => {
   const { name, slug, group_name } = req.body;
   if (!name || !slug) return res.status(400).json({ message: "Nama & slug wajib diisi" });
 
@@ -38,8 +38,8 @@ router.post("/", authorize("create_permissions"), async (req, res) => {
   }
 });
 
-// UPDATE Permission -> Butuh 'edit_permissions'
-router.put("/:id", authorize("edit_permissions"), async (req, res) => {
+// UPDATE Permission -> Ganti jadi 'manage_roles'
+router.put("/:id", authorize("manage_roles"), async (req, res) => {
   const id = req.params.id;
   const { name, slug, group_name } = req.body;
   if (!name || !slug) return res.status(400).json({ message: "Nama & slug wajib diisi" });
@@ -58,8 +58,8 @@ router.put("/:id", authorize("edit_permissions"), async (req, res) => {
   }
 });
 
-// DELETE Permission -> Butuh 'delete_permissions'
-router.delete("/:id", authorize("delete_permissions"), async (req, res) => {
+// DELETE Permission -> Ganti jadi 'manage_roles'
+router.delete("/:id", authorize("manage_roles"), async (req, res) => {
   const id = req.params.id;
   try {
     const result = await pool.query("DELETE FROM permissions WHERE id = $1", [id]);
