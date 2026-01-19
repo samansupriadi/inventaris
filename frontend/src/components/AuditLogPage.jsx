@@ -13,7 +13,14 @@ function AuditLogPage() {
   const fetchLogs = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/audit-logs`);
+      const res = await fetch(`${API_BASE_URL}/api/audit-logs`, {
+        credentials: "include" 
+      });
+      
+      if (!res.ok) {
+          throw new Error(`HTTP Error! Status: ${res.status}`);
+      }
+
       const data = await res.json();
       if (Array.isArray(data)) {
         setLogs(data);
