@@ -35,6 +35,7 @@ const app = express();
 const port = process.env.PORT || 4000;
 app.use(express.json({ limit: "10mb" })); 
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.set('trust proxy', 1);
 
 // 1. SECURITY HEADERS
 app.use(helmet());
@@ -42,10 +43,9 @@ app.use(helmet());
 // 2. CORS CONFIG (UPDATED: MULTI ORIGIN)
 // Daftar URL Frontend yang boleh akses Backend ini
 const allowedOrigins = [
-  "http://localhost:5173",      // Frontend Localhost Utama
-  "http://127.0.0.1:5173",      // IP Loopback (kadang browser pakai ini)
-  // "http://192.168.1.XX:5173", // Tambahkan IP LAN jika mau tes di HP satu WiFi
-  // "https://aset.sinergifoundation.org" // Tambahkan Domain Production nanti
+  "http://localhost:5173",      
+  "http://127.0.0.1:5173",     
+  "https://aset.sinergifoundation.org" 
 ];
 
 app.use(cors({
@@ -67,7 +67,6 @@ app.use(cors({
 
 // 3. PARSE COOKIES & JSON
 app.use(cookieParser());
-app.use(express.json());
 
 // 4. GLOBAL RATE LIMITER
 app.use(globalLimiter);
