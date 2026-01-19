@@ -130,6 +130,7 @@ function App() {
   const [filterCategory, setFilterCategory] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterYear, setFilterYear] = useState("");
+  const [filterEntity, setFilterEntity] = useState("");
 
   // PAGINATION
   const [assetPage, setAssetPage] = useState(1);
@@ -777,6 +778,9 @@ function App() {
                       onEditAsset={handleOpenEdit}
                       onDeleteAsset={handleDeleteAsset}
                       userPermissions={auth.user?.permissions || []}
+                      entities={entities} 
+                      filterEntity={filterEntity}
+                      onEntityChange={setFilterEntity}
                     />
                   </ProtectedRoute>
                 )}
@@ -922,6 +926,7 @@ function App() {
         fundingSources={fundingSources}
         locations={locations}
         categories={categories}
+        entities={entities}
         onClose={() => setSelectedAsset(null)}
         onUpdate={() => refreshAllData()}
       />
@@ -934,6 +939,7 @@ function App() {
         fundingSources={fundingSources}
         locations={locations}
         categories={categories}
+        entities={entities}
         mode="create"
       />
 
@@ -945,6 +951,7 @@ function App() {
         fundingSources={fundingSources}
         locations={locations}
         categories={categories}
+        entities={entities}
         mode="edit"
         asset={editAssetTarget}
       />

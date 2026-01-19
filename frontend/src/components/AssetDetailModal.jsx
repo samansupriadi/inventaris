@@ -12,6 +12,7 @@ function AssetDetailModal({
   fundingSources,
   locations,
   categories = [],
+  entities = [],
   onClose,
   onUpdate,
 }) {
@@ -66,6 +67,10 @@ function AssetDetailModal({
 
   const category = asset?.category_id
     ? categories?.find((c) => c.id === asset.category_id)
+    : null;
+
+  const entity = asset.entity_id
+    ? entities.find((e) => e.id === asset.entity_id)
     : null;
 
   // Helper URL
@@ -311,6 +316,11 @@ function AssetDetailModal({
                         </h3>
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-8 text-sm">
+                          <div>
+                            <span className="block text-xs text-slate-400 mb-1">Entitas / Yayasan</span>
+                            <span className="font-medium text-slate-700">{entity?.name || "-"}</span>
+                          </div>
+                          
                           <div>
                             <span className="block text-xs text-slate-400 mb-1">Kategori</span>
                             <span className="font-medium text-slate-700">

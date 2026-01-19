@@ -12,6 +12,7 @@ function AddAssetModal({
   fundingSources,
   locations,
   categories,
+  entities = [],
 }) {
   const isEdit = mode === "edit";
   const initialData = asset; 
@@ -26,6 +27,7 @@ function AddAssetModal({
   const [budgetCodeId, setBudgetCodeId] = useState("");
   const [purchaseDate, setPurchaseDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [entityId, setEntityId] = useState("");
 
   // State Financials
   const [value, setValue] = useState("");
@@ -180,6 +182,7 @@ function AddAssetModal({
       value: value ? Number(value) : 0,
       useful_life: usefulLife ? Number(usefulLife) : 0,
       residual_value: residualValue ? Number(residualValue) : 0,
+      entity_id: entityId,
     };
 
     let result;
@@ -237,6 +240,14 @@ function AddAssetModal({
                 <div className="md:col-span-2">
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5">Nama Aset <span className="text-red-500">*</span></label>
                   <input className="input-field w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-[#009846] focus:border-[#009846] outline-none" value={name} onChange={(e) => setName(e.target.value)} placeholder="Contoh: Laptop Asus VivoBook Pro 14" autoFocus />
+                </div>
+                
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">Entitas / Yayasan <span className="text-red-500">*</span></label>
+                  <select className="input-field w-full bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-sm" value={entityId} onChange={(e) => setEntityId(e.target.value)}>
+                      <option value="">-- Pilih Entitas --</option>
+                      {entities.map((ent) => <option key={ent.id} value={ent.id}>{ent.name}</option>)}
+                  </select>
                 </div>
                 
                 <div>

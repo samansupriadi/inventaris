@@ -22,7 +22,7 @@ router.get("/", verifyToken, authorize("view_assets"), async (req, res) => {
     let query = `
       SELECT a.id, a.name, a.code, a.location, a.condition, a.status,
              a.funding_source_id, a.value, a.location_id, a.category_id,
-             a.budget_code_id, a.notes, a.purchase_date, a.sequence_no,
+             a.budget_code_id, a.entity_id, a.notes, a.purchase_date, a.sequence_no,
              a.photo_url, a.receipt_url, a.created_at, a.deleted_at,
              a.useful_life, a.residual_value
       FROM assets a
@@ -36,9 +36,8 @@ router.get("/", verifyToken, authorize("view_assets"), async (req, res) => {
     }
 
     if (entity_id) {
-      query += ` JOIN funding_sources fs ON fs.id = a.funding_source_id `;
       params.push(entity_id);
-      where.push(`fs.entity_id = $${params.length}`);
+      where.push(`a.entity_id = $${params.length}`);
     }
 
     if (where.length) query += ` WHERE ${where.join(" AND ")} `;
@@ -57,9 +56,11 @@ router.post("/", verifyToken, authorize("create_assets"), async (req, res) => {
   const {
     name, location, location_id, condition, funding_source_id,
     category_id, budget_code_id, notes, purchase_date,
-    value, useful_life, residual_value
+    value, useful_life, residual_value, 
+    entity_id // 1. Pastikan entity_id diambil dari body
   } = req.body;
 
+  // Validasi Input (Tetap sama)
   if (!name || typeof name !== 'string' || name.trim() === "") {
     return res.status(400).json({ message: "Nama aset wajib diisi" });
   }
@@ -72,7 +73,7 @@ router.post("/", verifyToken, authorize("create_assets"), async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // 1. Cek Sumber Dana & Kategori
+    // 1. Cek Sumber Dana & Kategori (Logic Tetap Sama)
     const fsRes = await client.query(`SELECT code FROM funding_sources WHERE id = $1`, [funding_source_id]);
     if (fsRes.rowCount === 0) throw new Error("Sumber dana tidak valid");
     const fsCode = fsRes.rows[0].code;
@@ -86,7 +87,7 @@ router.post("/", verifyToken, authorize("create_assets"), async (req, res) => {
     const inputLife = parseNumber(useful_life);
     const finalUsefulLife = inputLife > 0 ? inputLife : catDefaultLife;
 
-    // 2. Generate Nomor Urut
+    // 2. Generate Nomor Urut (Logic Tetap Sama)
     const seqRes = await client.query(
       `SELECT COALESCE(MAX(sequence_no), 0) + 1 AS next_seq 
        FROM assets WHERE funding_source_id = $1 AND category_id = $2`,
@@ -99,23 +100,39 @@ router.post("/", verifyToken, authorize("create_assets"), async (req, res) => {
     const yearStr = d.getFullYear();
     const generatedCode = `${String(seq).padStart(4, "0")}/${fsCode}-${catCode}/${monthStr}-${yearStr}`;
 
-    // 3. Insert Data
+    // 3. Insert Data (FIXED: entity_id masuk & jumlah values pas 15 parameter)
     const insertRes = await client.query(
       `INSERT INTO assets
-        (name, code, location, location_id, condition, status,
-         funding_source_id, category_id, budget_code_id, notes,
-         purchase_date, sequence_no,
-         value, useful_life, residual_value)
+        (
+          name, code, location, location_id, condition, status,
+          funding_source_id, category_id, budget_code_id, entity_id, notes,
+          purchase_date, sequence_no,
+          value, useful_life, residual_value
+        )
        VALUES
-        ($1, $2, $3, $4, $5, 'available',
-         $6, $7, $8, $9,
-         $10, $11,
-         $12, $13, $14)
+        (
+          $1, $2, $3, $4, $5, 'available',
+          $6, $7, $8, $9, $10,
+          $11, $12,
+          $13, $14, $15
+        )
        RETURNING *`,
       [
-        name.trim(), generatedCode, location ? location.trim() : null, location_id || null, condition || 'baik',
-        funding_source_id, category_id, budget_code_id || null, notes ? notes.trim() : null,
-        purchaseDateStr, seq, parseNumber(value), finalUsefulLife, parseNumber(residual_value)
+        name.trim(),                        // $1
+        generatedCode,                      // $2
+        location ? location.trim() : null,  // $3
+        location_id || null,                // $4
+        condition || 'baik',                // $5
+        funding_source_id,                  // $6
+        category_id,                        // $7
+        budget_code_id || null,             // $8
+        entity_id || null,                  // $9  <-- Entitas Masuk Sini
+        notes ? notes.trim() : null,        // $10
+        purchaseDateStr,                    // $11
+        seq,                                // $12
+        parseNumber(value),                 // $13
+        finalUsefulLife,                    // $14
+        parseNumber(residual_value)         // $15 <-- Residual Value ada pasangannya
       ]
     );
 
@@ -147,7 +164,7 @@ router.put("/:id", verifyToken, authorize("update_assets"), async (req, res) => 
     name, location, location_id, condition, status,
     funding_source_id, category_id, budget_code_id,
     notes, purchase_date,
-    value, useful_life, residual_value
+    value, useful_life, residual_value, entity_id
   } = req.body;
 
   if (!name || name.trim() === "") return res.status(400).json({ message: "Nama aset wajib diisi" });
@@ -157,13 +174,13 @@ router.put("/:id", verifyToken, authorize("update_assets"), async (req, res) => 
       `UPDATE assets
        SET name = $1, location = $2, location_id = $3, condition = $4, status = COALESCE($5, status),
            funding_source_id = $6, category_id = $7, budget_code_id = $8, notes = $9, purchase_date = $10,
-           value = $11, useful_life = $12, residual_value = $13, updated_at = NOW()
-       WHERE id = $14 AND deleted_at IS NULL
+           value = $11, useful_life = $12, residual_value = $13, entity_id = $14, updated_at = NOW()
+       WHERE id = $15 AND deleted_at IS NULL
        RETURNING *`,
       [
         name.trim(), location ? location.trim() : null, location_id || null, condition || null, status || null,
         funding_source_id || null, category_id || null, budget_code_id || null, notes ? notes.trim() : null, purchase_date || null,
-        parseNumber(value), parseNumber(useful_life), parseNumber(residual_value), id
+        parseNumber(value), parseNumber(useful_life), parseNumber(residual_value), entity_id || null,  id
       ]
     );
 

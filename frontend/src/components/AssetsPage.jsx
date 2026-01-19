@@ -16,6 +16,7 @@ function AssetsPage({
   filterCategory,
   filterStatus,
   filterYear,
+  filterEntity,
   years,
   onSearchChange,
   onConditionChange,
@@ -24,6 +25,7 @@ function AssetsPage({
   onCategoryChange,
   onStatusChange,
   onYearChange,
+  onEntityChange,
   onResetFilters,
   onUploadPhoto,
   onBorrow,
@@ -42,6 +44,7 @@ function AssetsPage({
   onEditAsset,
   onDeleteAsset,
   userPermissions = [],
+  entities = [],
 }) {
   const startIndex = totalItems === 0 ? 0 : (page - 1) * pageSize;
   const endIndex = Math.min(startIndex + pageSize, totalItems);
@@ -182,6 +185,19 @@ function AssetsPage({
             {years.map((y) => (
               <option key={y} value={y}>
                 Tahun {y}
+              </option>
+            ))}
+          </select>
+
+          <select
+            className="border border-slate-300 px-3 py-2 rounded-lg focus:ring-2 focus:ring-[#009846] focus:border-[#009846] outline-none bg-white"
+            value={filterEntity || ""}
+            onChange={(e) => onEntityChange && onEntityChange(e.target.value)}
+          >
+            <option value="">Semua Entitas</option>
+            {entities.map((ent) => (
+              <option key={ent.id} value={ent.id}>
+                {ent.name}
               </option>
             ))}
           </select>

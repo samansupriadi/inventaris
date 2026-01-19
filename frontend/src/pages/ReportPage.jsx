@@ -27,9 +27,18 @@ function ReportPage() {
   // 1. Load Master Data
   useEffect(() => {
     // Load Categories
-    fetch(`${API_BASE_URL}/api/categories`)
-      .then(res => res.json())
-      .then(data => setCategories(data))
+    fetch(`${API_BASE_URL}/api/categories`, { credentials: "include" }) 
+      .then(res => {
+        if (!res.ok) throw new Error("Gagal load kategori");
+        return res.json();
+      })
+      .then(data => {
+        if (Array.isArray(data)) {
+            setCategories(data);
+        } else {
+            setCategories([]); 
+        }
+      })
       .catch(err => console.error(err));
 
     // Load Funding Sources
