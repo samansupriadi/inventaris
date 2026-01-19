@@ -2,8 +2,15 @@
 import { useState, useEffect, useRef } from "react";
 import { Html5QrcodeScanner } from "html5-qrcode"; // Library Scanner
 import { playBeep } from "../utils/sound"; // Helper Suara
-import { fetchLocations, createOpnameSession, fetchOpnameSessions, fetchOpnameDetail, updateOpnameItem, finalizeOpname } from "../api";
-import Swal from "sweetalert2"; // 👈 Import SweetAlert2
+import { 
+    fetchLocations, 
+    createOpnameSession, 
+    fetchOpnameSessions, 
+    fetchOpnameDetail, 
+    scanOpnameItem, // Ganti fungsi updateOpnameItem jadi scanOpnameItem (sesuai backend baru)
+    finalizeOpname 
+} from "../api";
+import Swal from "sweetalert2"; 
 import { hasPermission } from "../utils/auth";
 
 function StockOpnamePage() {
@@ -18,7 +25,7 @@ function StockOpnamePage() {
 
   // State Scanner
   const [isScanning, setIsScanning] = useState(false);
-  const scannerRef = useRef(null); // Ref untuk instance scanner
+  const scannerRef = useRef(null); 
 
   // Form State
   const [newTitle, setNewTitle] = useState("");
@@ -29,79 +36,90 @@ function StockOpnamePage() {
     loadLocations();
   }, []);
 
-  // Effect khusus untuk Scanner
+  // Effect Scanner
   useEffect(() => {
     if (isScanning && view === 'detail') {
-        // Inisialisasi Scanner saat mode scanning aktif
         const scanner = new Html5QrcodeScanner(
             "reader", 
             { fps: 10, qrbox: { width: 250, height: 250 } },
-            /* verbose= */ false
+            false
         );
         
         scanner.render(onScanSuccess, onScanFailure);
         scannerRef.current = scanner;
 
-        // Cleanup saat tutup modal scan
         return () => {
             scanner.clear().catch(error => console.error("Failed to clear scanner", error));
         };
     }
-  }, [isScanning, view]); // Re-run jika isScanning berubah
+  }, [isScanning, view]); 
 
-  // --- LOGIC SCANNER ---
-  const onScanSuccess = (decodedText) => {
-    // 1. Pause scanner sebentar biar ga scan berkali-kali dalam 1 detik
-    if (scannerRef.current) {
-        scannerRef.current.pause(true); 
-    }
+  // --- LOGIC SCANNER (CORE) ---
+  const onScanSuccess = async (decodedText) => {
+    // 1. Pause scanner
+    if (scannerRef.current) scannerRef.current.pause(true); 
+    playBeep("success");
 
     console.log(`Code Scanned: ${decodedText}`);
 
-    // 2. Cari aset di list items (menggunakan Kode Aset)
-    const targetItem = items.find(i => i.asset_code === decodedText);
+    // 2. Tampilkan Popup Konfirmasi Kondisi
+    const { isConfirmed, isDenied, dismiss } = await Swal.fire({
+        title: 'Aset Terdeteksi!',
+        text: `Kode: ${decodedText}. Bagaimana kondisi fisiknya?`,
+        icon: 'question',
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonText: '✅ BAIK',
+        denyButtonText: '🛠️ RUSAK',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#16a34a', // Hijau
+        denyButtonColor: '#dc2626',   // Merah
+    });
 
-    if (targetItem) {
-        // SKENARIO A: ASET DITEMUKAN (MATCH) ✅
-        playBeep("success"); // Bunyi "Ting!"
-        
-        // Auto verify di sistem
-        handleVerify(targetItem, 'Matched');
-        
-        // Tampilkan SweetAlert Success
-        Swal.fire({
-            icon: 'success',
-            title: 'DITEMUKAN!',
-            html: `<div class="text-left text-sm">
-                    <p><strong>Nama:</strong> ${targetItem.asset_name}</p>
-                    <p><strong>Kode:</strong> ${decodedText}</p>
-                   </div>`,
-            timer: 2000,
-            showConfirmButton: false
-        }).then(() => {
-            // Resume scanner setelah alert tutup otomatis
-            if (scannerRef.current) scannerRef.current.resume();
+    if (dismiss === Swal.DismissReason.cancel) {
+        // Resume jika batal
+        if (scannerRef.current) scannerRef.current.resume();
+        return;
+    }
+
+    // Tentukan kondisi berdasarkan tombol yang diklik
+    const condition = isConfirmed ? 'baik' : 'rusak';
+
+    // 3. Kirim Data ke Backend
+    try {
+        const res = await scanOpnameItem(activeSession.id, {
+            asset_code: decodedText,
+            condition: condition,
+            // status 'Matched'/'Moved' ditentukan backend otomatis
         });
 
-    } else {
-        // SKENARIO B: ASET SALAH LOKASI / TIDAK ADA DI LIST ❌
-        playBeep("error"); // Bunyi "Tet-tot!"
-        
-        // Tampilkan SweetAlert Error
+        if (res.success) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Tersimpan!',
+                text: `${res.message} (Kondisi: ${condition.toUpperCase()})`,
+                timer: 1500,
+                showConfirmButton: false
+            });
+            
+            // Refresh Data Item (Penting agar item moved muncul / status berubah)
+            fetchSessionDetail(activeSession.id);
+        }
+    } catch (err) {
+        playBeep("error");
         Swal.fire({
             icon: 'error',
-            title: 'TIDAK COCOK!',
-            text: `Aset "${decodedText}" tidak ada di daftar lokasi ini.`,
-            confirmButtonColor: '#d33'
-        }).then(() => {
-            // Resume scanner setelah user klik OK
-            if (scannerRef.current) scannerRef.current.resume();
+            title: 'Gagal',
+            text: err.message || "Gagal menyimpan data scan.",
         });
+    } finally {
+        // Resume scanner
+        if (scannerRef.current) scannerRef.current.resume();
     }
   };
 
   const onScanFailure = (error) => {
-    // Biarkan kosong agar console tidak penuh warning saat kamera mencari QR
+    // Biarkan kosong
   };
 
   const loadData = async () => {
@@ -141,12 +159,21 @@ function StockOpnamePage() {
     }
   };
 
+  // Helper untuk refresh data detail
+  const fetchSessionDetail = async (sessionId) => {
+      try {
+        const res = await fetchOpnameDetail(sessionId);
+        setActiveSession(res.session);
+        setItems(res.items);
+      } catch (err) {
+          console.error(err);
+      }
+  };
+
   const openSession = async (session) => {
     setLoading(true);
     try {
-        const res = await fetchOpnameDetail(session.id);
-        setActiveSession(res.session);
-        setItems(res.items);
+        await fetchSessionDetail(session.id);
         setView("detail");
     } catch(err) { 
         Swal.fire({ icon: 'error', title: 'Gagal', text: err.message });
@@ -155,56 +182,72 @@ function StockOpnamePage() {
     }
   };
 
-  const handleVerify = async (item, status) => {
-    const oldItems = [...items];
-    const newItems = items.map(i => i.id === item.id ? { ...i, status: status } : i);
-    setItems(newItems); // Update UI dulu (Optimistic)
-
+  // Manual Verify (Tanpa Scan - Tombol Aksi Manual)
+  const handleManualVerify = async (item, condition) => {
     try {
-        await updateOpnameItem(item.id, { 
-            status: status, 
-            condition: item.condition_actual || 'baik', 
-            notes: "" 
+        // Kita panggil endpoint scan juga, tapi inject kodenya manual
+        const res = await scanOpnameItem(activeSession.id, {
+            asset_code: item.asset_code,
+            condition: condition,
         });
-        // Update header progress real-time (tanpa fetch ulang agar cepat)
-        setActiveSession(prev => ({
-             ...prev, 
-             scanned_assets: newItems.filter(i => i.status === 'Matched').length
-        }));
+
+        if (res.success) {
+            // Update UI Optimistic (Cepat)
+            const newStatus = res.status || 'Matched'; // Fallback
+            setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: newStatus, condition_actual: condition } : i));
+            
+            // Update header count (Simple logic)
+            setActiveSession(prev => ({
+                 ...prev, 
+                 scanned_assets: prev.scanned_assets + (item.status === 'Missing' ? 1 : 0)
+            }));
+        }
     } catch(err) {
-        setItems(oldItems);
-        Swal.fire({ icon: 'error', title: 'Gagal', text: 'Gagal update status item.' });
+        Swal.fire({ icon: 'error', title: 'Gagal', text: err.message });
     }
   };
 
   const handleFinalize = async () => {
-    // Pakai SweetAlert Konfirmasi
     const result = await Swal.fire({
-        title: 'Finalisasi Audit?',
-        text: "Setelah difinalisasi, data tidak bisa diubah lagi.",
+        title: 'Finalisasi Opname?',
+        html: `
+            <p class="text-sm text-slate-500 mb-2">Sistem akan melakukan rekonsiliasi otomatis:</p>
+            <ul class="text-xs text-left list-disc pl-6 mb-4">
+                <li>Aset <b>Missing</b> akan diubah jadi <b>Hilang</b>.</li>
+                <li>Aset <b>Moved</b> akan <b>Pindah Lokasi</b> ke sini.</li>
+                <li>Kondisi fisik aset akan diupdate sesuai hasil scan.</li>
+            </ul>
+            <p class="text-sm font-bold text-red-600">Proses ini tidak dapat dibatalkan!</p>
+        `,
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#3085d6',
         cancelButtonColor: '#d33',
-        confirmButtonText: 'Ya, Selesai!',
+        confirmButtonText: 'Ya, Proses Sekarang!',
         cancelButtonText: 'Batal'
     });
 
     if (result.isConfirmed) {
+        setLoading(true);
         try {
-            await finalizeOpname(activeSession.id);
-            Swal.fire('Selesai!', 'Audit telah berhasil diselesaikan.', 'success');
+            const res = await finalizeOpname(activeSession.id);
+            Swal.fire('Selesai!', res.message, 'success');
             setView("list");
             loadData();
         } catch(err) { 
             Swal.fire({ icon: 'error', title: 'Gagal', text: err.message });
+        } finally {
+            setLoading(false);
         }
     }
   };
 
   // --- RENDER DETAIL ---
   if (view === "detail" && activeSession) {
-    const progress = Math.round((activeSession.scanned_assets / activeSession.total_assets) * 100) || 0;
+    const progress = activeSession.total_assets > 0 
+        ? Math.round((activeSession.scanned_assets / activeSession.total_assets) * 100) 
+        : 0;
+    
     const canExecute = hasPermission('execute_opname'); 
     const canFinalize = hasPermission('finalize_opname');
 
@@ -222,25 +265,23 @@ function StockOpnamePage() {
             </div>
             
             <div className="flex gap-2">
-                {/* TOMBOL SCANNER (Hanya muncul jika belum final) */}
                 {activeSession.status !== 'Finalized' && canExecute && (
                     <button 
                         onClick={() => setIsScanning(true)} 
                         className="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg shadow-blue-900/20 flex items-center gap-2"
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
-                        Mode Scan QR
+                        Mulai Scan QR
                     </button>
                 )}
                 
                 {activeSession.status !== 'Finalized' && canFinalize && (
                     <button onClick={handleFinalize} className="px-5 py-2 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 shadow-lg shadow-green-900/20">
-                        Selesai
+                        Selesai & Finalisasi
                     </button>
                 )}
             </div>
         </div>
-
 
         {/* AREA SCANNER KAMERA */}
         {isScanning && (
@@ -251,7 +292,6 @@ function StockOpnamePage() {
                         <button onClick={() => setIsScanning(false)} className="text-slate-400 hover:text-white">Tutup ✕</button>
                     </div>
                     
-                    {/* AREA KAMERA */}
                     <div className="p-4 bg-gray-100">
                         <div id="reader" className="w-full"></div>
                     </div>
@@ -280,30 +320,42 @@ function StockOpnamePage() {
                 <thead className="bg-slate-50 text-slate-600 font-bold uppercase text-xs border-b">
                     <tr>
                         <th className="p-4">Kode / Nama Aset</th>
-                        <th className="p-4">Status</th>
-                        <th className="p-4 text-center">Manual Aksi</th>
+                        <th className="p-4">Status Temuan</th>
+                        <th className="p-4">Kondisi Fisik</th>
+                        <th className="p-4 text-center">Aksi Manual</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                     {items.map(item => (
-                        <tr key={item.id} className={`hover:bg-slate-50 transition ${item.status === 'Matched' ? 'bg-green-50/50' : ''}`}>
+                        <tr key={item.id} className={`hover:bg-slate-50 transition ${item.status === 'Matched' ? 'bg-green-50/50' : item.status === 'Moved' ? 'bg-yellow-50/50' : ''}`}>
                             <td className="p-4">
                                 <div className="font-bold text-slate-800">{item.asset_name}</div>
                                 <div className="text-xs text-slate-500 font-mono">{item.asset_code}</div>
+                                {item.status === 'Moved' && <span className="text-[10px] text-yellow-600 bg-yellow-100 px-1 rounded">Barang Pindahan</span>}
                             </td>
                             <td className="p-4">
                                 <span className={`px-2 py-1 rounded text-xs border font-semibold ${
                                     item.status === 'Matched' ? 'bg-green-100 text-green-700 border-green-200' : 
+                                    item.status === 'Moved' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' :
                                     item.status === 'Missing' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-slate-100 text-slate-500'
                                 }`}>
-                                    {item.status === 'Matched' ? '✅ Ditemukan' : '❌ Belum/Hilang'}
+                                    {item.status === 'Matched' ? '✅ Sesuai' : 
+                                     item.status === 'Moved' ? '⚠️ Pindah Lokasi' : 
+                                     '❌ Belum Scan'}
                                 </span>
+                            </td>
+                            <td className="p-4">
+                                {item.status !== 'Missing' ? (
+                                    <span className={`uppercase text-xs font-bold ${item.condition_actual === 'rusak' ? 'text-red-600' : 'text-green-600'}`}>
+                                        {item.condition_actual}
+                                    </span>
+                                ) : <span className="text-slate-300">-</span>}
                             </td>
                             <td className="p-4 text-center">
                                 {activeSession.status !== 'Finalized' && canExecute && (
                                     <div className="flex justify-center gap-2">
-                                        <button onClick={() => handleVerify(item, 'Matched')} className={`px-3 py-1.5 rounded border text-xs font-bold ${item.status === 'Matched' ? 'bg-green-600 text-white' : 'hover:bg-green-50 text-green-600 border-green-200'}`}>ADA</button>
-                                        <button onClick={() => handleVerify(item, 'Missing')} className={`px-3 py-1.5 rounded border text-xs font-bold ${item.status === 'Missing' ? 'bg-red-600 text-white' : 'hover:bg-red-50 text-red-600 border-red-200'}`}>HILANG</button>
+                                        <button onClick={() => handleManualVerify(item, 'baik')} className="px-2 py-1 rounded border text-xs font-bold hover:bg-green-50 text-green-600 border-green-200" title="Set Baik">👍 Baik</button>
+                                        <button onClick={() => handleManualVerify(item, 'rusak')} className="px-2 py-1 rounded border text-xs font-bold hover:bg-red-50 text-red-600 border-red-200" title="Set Rusak">👎 Rusak</button>
                                     </div>
                                 )}
                             </td>
@@ -322,7 +374,7 @@ function StockOpnamePage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4">
             <div>
                 <h1 className="text-2xl font-bold text-slate-800">Stock Opname</h1>
-                <p className="text-sm text-slate-500 mt-1">Audit fisik aset berkala.</p>
+                <p className="text-sm text-slate-500 mt-1">Audit fisik aset berkala & rekonsiliasi otomatis.</p>
             </div>
         </div>
 
@@ -339,7 +391,9 @@ function StockOpnamePage() {
                         </div>
                         <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
                             <div className="text-xs text-slate-500">Progress: <span className="font-bold text-slate-700">{s.scanned_assets} / {s.total_assets}</span> Aset</div>
-                            <div className="w-32 bg-slate-100 rounded-full h-2"><div className="bg-green-500 h-2 rounded-full" style={{ width: `${(s.scanned_assets/s.total_assets)*100}%` }}></div></div>
+                            <div className="w-32 bg-slate-100 rounded-full h-2">
+                                <div className="bg-green-500 h-2 rounded-full" style={{ width: `${s.total_assets > 0 ? (s.scanned_assets/s.total_assets)*100 : 0}%` }}></div>
+                            </div>
                         </div>
                     </div>
                 ))}

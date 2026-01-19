@@ -1,15 +1,32 @@
 // src/components/DashboardPage.jsx
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { fetchDashboardSummary } from "../api";
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
+import { Line } from 'react-chartjs-2';
 
-function DashboardPage({ assets = [], fundingSummary = [] }) {
-  
-  // Hitung Statistik
-  const totalAssets = assets.length;
-  const totalValue = assets.reduce((sum, a) => sum + (Number(a.value) || 0), 0);
-  const availableCount = assets.filter(a => a.status === 'available').length;
-  const borrowedCount = assets.filter(a => a.status === 'borrowed').length;
-  const maintenanceCount = assets.filter(a => a.condition === 'maintenance').length;
-  const brokenCount = assets.filter(a => a.condition === 'rusak').length;
+// Register ChartJS
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
+
+function DashboardPage() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch Data dari Endpoint Cerdas tadi
+  useEffect(() => {
+    const loadDashboard = async () => {
+      try {
+        // Asumsi fetchWithAuth sudah ada di api.js
+        // URL-nya mengarah ke /api/dashboard/summary
+        const res = await fetchDashboardSummary();
+        setData(res);
+      } catch (error) {
+        console.error("Gagal load dashboard:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadDashboard();
+  }, []);
 
   const formatCurrency = (num) => {
     return new Intl.NumberFormat('id-ID', {
@@ -19,115 +36,128 @@ function DashboardPage({ assets = [], fundingSummary = [] }) {
     }).format(num);
   };
 
+  if (loading) return <div className="p-8 text-center text-slate-500">Sedang menganalisa data...</div>;
+  if (!data) return <div className="p-8 text-center text-red-500">Gagal memuat data.</div>;
+
+  const { stats, funding, wisdom, knowledge } = data;
+
+  // Konfigurasi Chart Tren Opname
+  const chartData = {
+    labels: knowledge.opname_history.map(k => new Date(k.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })),
+    datasets: [
+      {
+        label: 'Akurasi Audit (%)',
+        data: knowledge.opname_history.map(k => k.accuracy),
+        borderColor: 'rgb(37, 99, 235)',
+        backgroundColor: 'rgba(37, 99, 235, 0.5)',
+        tension: 0.3,
+      },
+    ],
+  };
+
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in pb-10">
       
       {/* HEADER */}
       <div>
-        <h2 className="text-2xl font-bold text-slate-800">Dashboard Inventaris</h2>
-        <p className="text-slate-500 text-sm mt-1">Ringkasan data aset dan statistik terkini.</p>
+        <h2 className="text-2xl font-bold text-slate-800">Executive Dashboard</h2>
+        <p className="text-slate-500 text-sm mt-1">Analisa performa aset & rekomendasi tindakan.</p>
       </div>
 
-      {/* KARTU UTAMA (STATISTIK) */}
+      {/* --- SECTION 1: WISDOM (REKOMENDASI AKSI) --- */}
+      {/* Ini fitur "Killer" buat Atasan */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        
+        {/* Widget 1: Audit Alert */}
+        <div className={`p-4 rounded-xl border-l-4 shadow-sm flex items-start gap-4 ${wisdom.audit_alerts.length > 0 ? 'bg-red-50 border-red-500' : 'bg-green-50 border-green-500'}`}>
+          <div className="text-2xl">{wisdom.audit_alerts.length > 0 ? '🚨' : '✅'}</div>
+          <div>
+            <h4 className={`font-bold ${wisdom.audit_alerts.length > 0 ? 'text-red-700' : 'text-green-700'}`}>
+              {wisdom.audit_alerts.length > 0 ? 'Tindakan Diperlukan: Audit Lokasi' : 'Kepatuhan Audit Aman'}
+            </h4>
+            <p className="text-sm text-slate-600 mt-1">
+              {wisdom.audit_alerts.length > 0 
+                ? `Lokasi berikut belum diaudit >6 bulan: ${wisdom.audit_alerts.map(l => l.name).join(', ')}.`
+                : 'Semua lokasi telah diaudit secara berkala.'}
+            </p>
+          </div>
+        </div>
+
+        {/* Widget 2: Rekomendasi Peremajaan */}
+        <div className={`p-4 rounded-xl border-l-4 shadow-sm flex items-start gap-4 ${wisdom.replacement_needed > 0 ? 'bg-yellow-50 border-yellow-500' : 'bg-blue-50 border-blue-500'}`}>
+          <div className="text-2xl">💡</div>
+          <div>
+            <h4 className="font-bold text-slate-800">Analisa Peremajaan Aset</h4>
+            <p className="text-sm text-slate-600 mt-1">
+              Sistem mendeteksi <strong>{wisdom.replacement_needed} aset tua (&gt; 5 tahun) & rusak</strong> yang sebaiknya dihapus buku
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* --- SECTION 2: UNDERSTANDING (FINANCIAL & STATS) --- */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Aset */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-          <div>
-            <span className="text-xs font-bold text-[#009846] uppercase tracking-wider bg-green-50 px-2 py-1 rounded-md">Total Aset</span>
-            <h3 className="text-3xl font-extrabold text-slate-800 mt-3">{totalAssets}</h3>
-          </div>
-          <p className="text-xs text-slate-400 mt-2">Unit barang terdaftar</p>
+        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+          <span className="text-xs font-bold text-[#009846] bg-green-50 px-2 py-1 rounded-md">TOTAL ASET</span>
+          <h3 className="text-3xl font-extrabold text-slate-800 mt-3">{stats.total_assets}</h3>
+          <p className="text-xs text-slate-400 mt-1">Unit terdaftar</p>
         </div>
 
         {/* Total Nilai */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-          <div>
-            <span className="text-xs font-bold text-blue-600 uppercase tracking-wider bg-blue-50 px-2 py-1 rounded-md">Total Nilai</span>
-            <h3 className="text-2xl font-extrabold text-slate-800 mt-3 truncate" title={formatCurrency(totalValue)}>
-              {formatCurrency(totalValue)}
-            </h3>
-          </div>
-          <p className="text-xs text-slate-400 mt-2">Estimasi valuasi aset</p>
+        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+          <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-md">VALUASI</span>
+          <h3 className="text-2xl font-extrabold text-slate-800 mt-3 truncate">{formatCurrency(stats.total_value)}</h3>
+          <p className="text-xs text-slate-400 mt-1">Total nilai buku</p>
         </div>
 
-        {/* Tersedia */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-          <div>
-            <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider bg-emerald-50 px-2 py-1 rounded-md">Tersedia</span>
-            <h3 className="text-3xl font-extrabold text-slate-800 mt-3">{availableCount}</h3>
-          </div>
-          <p className="text-xs text-slate-400 mt-2">Siap digunakan/dipinjam</p>
+        {/* Aset Hilang (Critical) */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+          <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-md">ASET HILANG</span>
+          <h3 className="text-3xl font-extrabold text-red-600 mt-3">{stats.hilang}</h3>
+          <p className="text-xs text-slate-400 mt-1">Perlu investigasi</p>
         </div>
 
-        {/* Sedang Dipinjam */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-          <div>
-            <span className="text-xs font-bold text-orange-600 uppercase tracking-wider bg-orange-50 px-2 py-1 rounded-md">Sedang Dipinjam</span>
-            <h3 className="text-3xl font-extrabold text-slate-800 mt-3">{borrowedCount}</h3>
-          </div>
-          <p className="text-xs text-slate-400 mt-2">Barang di luar gudang</p>
+        {/* Aset Rusak */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+          <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-md">RUSAK / MAINTENANCE</span>
+          <h3 className="text-3xl font-extrabold text-slate-800 mt-3">{Number(stats.rusak)}</h3>
+          <p className="text-xs text-slate-400 mt-1">Tidak produktif</p>
         </div>
       </div>
 
-      {/* SECTION BAWAH: STATUS KONDISI & SUMBER DANA */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* --- SECTION 3: KNOWLEDGE (TREN & DATA) --- */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Card Kondisi Aset */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-          <h4 className="text-lg font-bold text-slate-800 mb-4">Kondisi Aset</h4>
-          <div className="space-y-4">
-            {/* Bar Maintenance */}
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-slate-600">Maintenance / Perbaikan</span>
-                <span className="font-bold text-slate-800">{maintenanceCount}</span>
-              </div>
-              <div className="w-full bg-slate-100 rounded-full h-2.5">
-                <div 
-                  className="bg-yellow-400 h-2.5 rounded-full" 
-                  style={{ width: `${(maintenanceCount / totalAssets) * 100}%` }}
-                ></div>
-              </div>
-            </div>
-
-            {/* Bar Rusak */}
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-slate-600">Rusak / Tidak Layak</span>
-                <span className="font-bold text-slate-800">{brokenCount}</span>
-              </div>
-              <div className="w-full bg-slate-100 rounded-full h-2.5">
-                <div 
-                  className="bg-red-500 h-2.5 rounded-full" 
-                  style={{ width: `${(brokenCount / totalAssets) * 100}%` }}
-                ></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Card Sumber Dana (Opsional, jika ada data) */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-          <h4 className="text-lg font-bold text-slate-800 mb-4">Aset per Sumber Dana</h4>
-          <div className="overflow-y-auto max-h-48 pr-2 custom-scrollbar space-y-3">
-            {fundingSummary.map((fs) => (
-              <div key={fs.id} className="flex items-center justify-between p-3 rounded-lg border border-slate-50 hover:bg-slate-50 transition-colors">
-                <div>
-                  <div className="text-sm font-medium text-slate-700">{fs.name}</div>
-                  <div className="text-xs text-slate-400">{fs.count} unit</div>
-                </div>
-                <div className="text-sm font-bold text-slate-600">
-                  {formatCurrency(fs.totalValue)}
-                </div>
-              </div>
-            ))}
-            {fundingSummary.length === 0 && (
-                <p className="text-sm text-slate-400 text-center py-4">Belum ada data sumber dana.</p>
+        {/* Chart Tren Opname */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm lg:col-span-2">
+          <h4 className="text-lg font-bold text-slate-800 mb-4">Tren Kualitas Data (Akurasi Opname)</h4>
+          <div className="h-64">
+            {knowledge.opname_history.length > 0 ? (
+               <Line options={{ responsive: true, maintainAspectRatio: false }} data={chartData} />
+            ) : (
+               <div className="h-full flex items-center justify-center text-slate-400 text-sm">Belum ada data history opname.</div>
             )}
           </div>
         </div>
 
+        {/* Sumber Dana (Scrollable) */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+          <h4 className="text-lg font-bold text-slate-800 mb-4">Breakdown Sumber Dana</h4>
+          <div className="overflow-y-auto max-h-64 pr-2 custom-scrollbar space-y-3">
+            {funding.map((fs, idx) => (
+              <div key={idx} className="flex items-center justify-between p-3 rounded-lg border border-slate-50 hover:bg-slate-50">
+                <div>
+                  <div className="text-sm font-medium text-slate-700">{fs.name}</div>
+                  <div className="text-xs text-slate-400">{fs.count} unit</div>
+                </div>
+                <div className="text-sm font-bold text-slate-600">{formatCurrency(fs.total_value)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
+
     </div>
   );
 }

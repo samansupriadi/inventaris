@@ -26,7 +26,8 @@ import importRoutes from "./routes/importRoutes.js";
 import opnameRoutes from "./routes/opnameRoutes.js";
 import auditRoutes from "./routes/auditRoutes.js";
 import reportRouter from "./routes/reportRoutes.js";
-import maintenanceRoutes from "./routes/maintenanceRoutes.js"; 
+import maintenanceRoutes from "./routes/maintenanceRoutes.js";
+import dashboardRoutes from "./routes/dashboardRoutes.js"; 
 
 dotenv.config();
 
@@ -96,6 +97,7 @@ app.use("/api/opname", opnameRoutes);
 app.use("/api/audit-logs", auditRoutes);
 app.use("/api/reports", reportRouter);
 app.use("/api/maintenances", maintenanceRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 
 // listen
 app.listen(port, () => {

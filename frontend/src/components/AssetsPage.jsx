@@ -155,7 +155,7 @@ function AssetsPage({
             <option value="borrowed">Dipinjam</option>
             <option value="maintenance">Maintenance</option>
             <option value="rusak">Rusak</option>
-            <option value="lost">Hilang</option>
+            <option value="hilang">Hilang</option>
           </select>
         </div>
 

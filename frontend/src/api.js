@@ -397,7 +397,7 @@ export const fetchCurrentUser = async () => {
   try {
     // Kita panggil endpoint /me yang baru dibuat
     // Pastikan 'credentials: include' agar cookie HttpOnly terkirim
-    const response = await fetch(`${API_BASE_URL}/auth/me`, {
+    const response = await fetch(`${API_BASE_URL}/api/me`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -418,3 +418,25 @@ export const fetchCurrentUser = async () => {
     throw error;
   }
 };
+
+export const scanOpnameItem = async (sessionId, payload) => {
+  const res = await fetch(`${API_BASE_URL}/api/opname/sessions/${sessionId}/scan`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include", 
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.message || "Scan gagal");
+  }
+  return res.json();
+};
+
+// === DASHBOARD API ===
+export async function fetchDashboardSummary() {
+  return fetchWithAuth("/api/dashboard/summary");
+}
