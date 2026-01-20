@@ -7,7 +7,7 @@ import { Line } from 'react-chartjs-2';
 // Register ChartJS
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
-function DashboardPage() {
+function DashboardPage({ onNavigate }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -58,10 +58,25 @@ function DashboardPage() {
   return (
     <div className="space-y-6 animate-fade-in pb-10">
       
-      {/* HEADER */}
-      <div>
-        <h2 className="text-2xl font-bold text-slate-800">Executive Dashboard</h2>
-        <p className="text-slate-500 text-sm mt-1">Analisa performa aset & rekomendasi tindakan.</p>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <p className="text-slate-500 text-sm mt-1">Analisa performa aset & rekomendasi tindakan.</p>
+        </div>
+
+        {/* 👇 TOMBOL SCAN BARU 👇 */}
+        <button 
+          onClick={() => onNavigate('scan-identify')} 
+          className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl shadow-md flex items-center gap-2 transition-all active:scale-95"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 7V5a2 2 0 0 1 2-2h2"></path>
+            <path d="M17 3h2a2 2 0 0 1 2 2v2"></path>
+            <path d="M21 17v2a2 2 0 0 1-2 2h-2"></path>
+            <path d="M7 21H5a2 2 0 0 1-2-2v-2"></path>
+            <rect x="7" y="7" width="10" height="10" rx="1"></rect>
+          </svg>
+          <span className="font-semibold text-sm">Scan Aset</span>
+        </button>
       </div>
 
       {/* --- SECTION 1: WISDOM (REKOMENDASI AKSI) --- */}

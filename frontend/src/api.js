@@ -447,3 +447,9 @@ export async function resetUserPassword(userId) {
     method: 'PUT'
   });
 }
+
+// === SCANNER API ===
+export async function fetchAssetByCode(code) {
+  // encodeURIComponent penting supaya karakter garis miring (/) di kode aset tidak dianggap path URL
+  return fetchWithAuth(`/api/assets/code/${encodeURIComponent(code)}`);
+}

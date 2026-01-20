@@ -69,7 +69,7 @@ import StockOpnamePage from "./components/StockOpnamePage";
 import ReportPage from "./pages/ReportPage";
 import MaintenancePage from "./pages/MaintenancePage";
 import AuditLogPage from "./components/AuditLogPage";
-
+import ScanIdentifikasiPage from './pages/ScanIdentifikasiPage';
 
 const ProtectedRoute = ({ permission, children }) => {
   if (!permission) return children;
@@ -733,7 +733,11 @@ function App() {
               <>
                 {activeMenu === "dashboard" && (
                   <ProtectedRoute permission="view_dashboard">
-                    <DashboardPage assets={assets} fundingSummary={fundingSummary} />
+                    <DashboardPage 
+                    assets={assets} 
+                    fundingSummary={fundingSummary} 
+                    onNavigate={(menu) => setActiveMenu(menu)}
+                    />
                   </ProtectedRoute>
                 )}
 
@@ -894,6 +898,10 @@ function App() {
                   <ProtectedRoute permission="view_audit_logs">
                     <AuditLogPage />
                   </ProtectedRoute>
+                )}
+
+                {activeMenu === "scan-identify" && (
+                  <ScanIdentifikasiPage />
                 )}
 
               </>

@@ -296,4 +296,36 @@ router.post("/:id/restore", verifyToken, authorize("delete_assets"), async (req,
 router.post("/:id/borrow", verifyToken, authorize("borrow_asset"), upload.single("photo"), borrowAsset);
 router.post("/:id/return", verifyToken, authorize("return_asset"), upload.single("photo"), returnAsset);
 
+
+// GET ASSET BY CODE (Untuk Fitur Scan)
+router.get("/code/:assetCode", verifyToken, async (req, res) => {
+  const { assetCode } = req.params;
+  try {
+    // Decode dulu takutnya ada karakter spesial (slash, spasi)
+    const decodedCode = decodeURIComponent(assetCode);
+
+    const result = await pool.query(
+      `SELECT a.*, 
+        c.name as category_name, 
+        l.name as location_name,
+        u.name as assignee_name
+       FROM assets a
+       LEFT JOIN categories c ON a.category_id = c.id
+       LEFT JOIN locations l ON a.location_id = l.id
+       LEFT JOIN users u ON a.assigned_to = u.id
+       WHERE a.asset_code = $1 AND a.deleted_at IS NULL`,
+      [decodedCode]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Aset tidak ditemukan" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server Error" });
+  }
+});
+
 export default router;
