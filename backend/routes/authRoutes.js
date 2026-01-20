@@ -14,7 +14,9 @@ const router = express.Router();
  * Menerima email & password, mengembalikan User Data & Set HttpOnly Cookie
  */
 router.post("/login", loginLimiter, async (req, res) => {
-  const { email, password } = req.body;
+  let { email, password } = req.body;
+  if (email) email = email.trim();
+  if (password) password = password.trim();
   const invalidCredentialsMsg = "Email atau password salah";
 
   if (!email || !password) {
@@ -39,6 +41,11 @@ router.post("/login", loginLimiter, async (req, res) => {
 
     // B. Cek Password
     const match = await bcrypt.compare(password, row.password_hash || "");
+    // 👇 DEBUG LOG (Hapus nanti kalau sudah fix)
+    console.log(`🔍 Cek Login User: ${row.email}`);
+    console.log(`   Input Password: ${password}`);
+    console.log(`   Hash di DB: ${row.password_hash}`);
+    console.log(`   Hasil Match: ${match}`);
     if (!match) {
       return res.status(401).json({ message: invalidCredentialsMsg });
     }

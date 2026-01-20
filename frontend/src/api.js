@@ -440,3 +440,10 @@ export const scanOpnameItem = async (sessionId, payload) => {
 export async function fetchDashboardSummary() {
   return fetchWithAuth("/api/dashboard/summary");
 }
+
+// === USER API ===
+export async function resetUserPassword(userId) {
+  return fetchWithAuth(`/api/users/${userId}/reset-password`, {
+    method: 'PUT'
+  });
+}

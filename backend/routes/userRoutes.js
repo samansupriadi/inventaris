@@ -3,6 +3,7 @@ import express from "express";
 import bcrypt from "bcrypt";
 import pool from "../db.js";
 import { verifyToken, authorize } from "../middleware/authMiddleware.js";
+import crypto from "crypto";
 
 const router = express.Router();
 
@@ -153,6 +154,42 @@ router.post("/:id/restore", authorize("manage_users"), async (req, res) => {
     } catch (err) {
         res.status(500).json({ message: "Gagal restore user" });
     }
+});
+
+/**
+ * RESET PASSWORD (GENERATED)
+ * Hanya bisa dilakukan oleh Admin/Super Admin
+ */
+router.put("/:id/reset-password", verifyToken, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    // 1. Generate Password (Hexadecimal: a-f, 0-9)
+    // Kita pastikan lowercase biar tidak bingung
+    const newPassword = crypto.randomBytes(4).toString("hex").toLowerCase(); 
+
+    // 2. Hash Password
+    const salt = await bcrypt.genSalt(10);
+    const hash = await bcrypt.hash(newPassword, salt);
+
+    // 3. Update Database
+    await pool.query("UPDATE users SET password_hash = $1 WHERE id = $2", [hash, id]);
+
+    // 4. Log untuk Administrator (Supaya bisa intip di terminal server kalau user lupa)
+    console.log(`⚠️ RESET PASSWORD untuk User ID ${id}`);
+    console.log(`   Password Baru (Plain): ${newPassword}`);
+    console.log(`   Password Baru (Hash):  ${hash}`);
+
+    // 5. Kirim ke Frontend
+    res.json({ 
+      message: "Password berhasil direset.", 
+      newPassword: newPassword 
+    });
+
+  } catch (err) {
+    console.error("Reset Password Error:", err); // 👈 Cek error detail
+    res.status(500).json({ message: "Gagal mereset password" });
+  }
 });
 
 export default router;
