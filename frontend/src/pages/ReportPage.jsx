@@ -1,23 +1,26 @@
 // src/pages/ReportPage.jsx
 import { useState, useEffect, useRef } from "react";
 import { useReactToPrint } from "react-to-print";
-import { API_BASE_URL, fetchFundingSources, fetchLocations } from "../api";
+import { API_BASE_URL, fetchFundingSources, fetchLocations, fetchBudgetCodes } from "../api";
 import { ReportTemplate } from "../components/ReportTemplate";
 
 function ReportPage() {
   const [reportData, setReportData] = useState({ summary: {}, data: [] });
   const [categories, setCategories] = useState([]);
   const [fundingSources, setFundingSources] = useState([]); 
-  const [locations, setLocations] = useState([]); // <--- PERBAIKAN: STATE LOKASI DITAMBAHKAN
+  const [locations, setLocations] = useState([]);
+  const [budgetCodes, setBudgetCodes] = useState([]); // State untuk KMA
   const [loading, setLoading] = useState(false);
 
   // Filter State
-  const [reportType, setReportType] = useState("all"); 
+  // Kita hapus reportType karena Bapak bilang "Semua Aset" saja cukup
+  // Tapi kita simpan filter 'status' atau 'condition' di dropdown jika perlu
   const [selectedCategory, setSelectedCategory] = useState("");
   const [selectedLocation, setSelectedLocation] = useState("");
   const [selectedYear, setSelectedYear] = useState("");
   const [selectedFunding, setSelectedFunding] = useState(""); 
   const [selectedKma, setSelectedKma] = useState(""); 
+  const [selectedCondition, setSelectedCondition] = useState(""); // Ganti radio button dengan dropdown kondisi
 
   const componentRef = useRef(null);
 
@@ -26,42 +29,33 @@ function ReportPage() {
 
   // 1. Load Master Data
   useEffect(() => {
-    // Load Categories
+    // Categories
     fetch(`${API_BASE_URL}/api/categories`, { credentials: "include" }) 
-      .then(res => {
-        if (!res.ok) throw new Error("Gagal load kategori");
-        return res.json();
-      })
-      .then(data => {
-        if (Array.isArray(data)) {
-            setCategories(data);
-        } else {
-            setCategories([]); 
-        }
-      })
+      .then(res => res.json())
+      .then(data => setCategories(Array.isArray(data) ? data : []))
       .catch(err => console.error(err));
 
-    // Load Funding Sources
-    fetchFundingSources()
-        .then(data => setFundingSources(data))
-        .catch(err => console.error(err));
-
-    // Load Locations
-    fetchLocations()
-        .then(data => setLocations(data))
-        .catch(err => console.error("Gagal load lokasi:", err));
+    // Funding & Locations
+    fetchFundingSources().then(setFundingSources).catch(console.error);
+    fetchLocations().then(setLocations).catch(console.error);
   }, []);
   
+  // 2. Load KMA Dinamis
+  useEffect(() => {
+    if (!selectedFunding) {
+      setBudgetCodes([]);
+      return;
+    }
+    // Panggil API Budget Codes (yang sudah ada parameternya)
+    fetchBudgetCodes(selectedFunding)
+      .then(data => setBudgetCodes(Array.isArray(data) ? data : []))
+      .catch(console.error);
+  }, [selectedFunding]);
 
-  // 2. Fetch Data Laporan
+  // 3. Fetch Data Laporan
   useEffect(() => {
     fetchReportData();
-  }, [reportType, selectedCategory, selectedYear, selectedFunding, selectedKma, selectedLocation]);
-
-  // Logic KMA
-  const availableKmas = selectedFunding 
-    ? fundingSources.find(f => String(f.id) === String(selectedFunding))?.budget_codes || []
-    : [];
+  }, [selectedCategory, selectedYear, selectedFunding, selectedKma, selectedLocation, selectedCondition]);
 
   const fetchReportData = async () => {
     setLoading(true);
@@ -69,7 +63,8 @@ function ReportPage() {
       const params = new URLSearchParams();
       
       if (selectedCategory) params.append("category_id", selectedCategory);
-      if (reportType === "broken") params.append("condition", "rusak");
+      if (selectedLocation) params.append("location_id", selectedLocation);
+      if (selectedCondition) params.append("condition", selectedCondition); // Filter kondisi (rusak/baik/hilang)
       
       if (selectedYear) {
          params.append("start_date", `${selectedYear}-01-01`);
@@ -79,22 +74,38 @@ function ReportPage() {
       if (selectedFunding) params.append("funding_source_id", selectedFunding);
       if (selectedKma) params.append("budget_code_id", selectedKma);
       
-      // Kirim Filter Lokasi
-      if (selectedLocation) params.append("location_id", selectedLocation);
-
       const res = await fetch(`${API_BASE_URL}/api/reports/summary?${params.toString()}`, {
           credentials: "include" 
       });
       
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
+      if (!res.ok) throw new Error("Gagal load laporan");
       
       const result = await res.json();
-      setReportData(result);
+
+      // --- LOGIKA WRITE-OFF DI SINI ---
+      // Sebelum masuk ke state, kita manipulasi datanya dulu.
+      // Jika kondisi rusak/hilang, paksa book_value jadi 0.
+      const processedData = (result.data || []).map(item => {
+          const cond = (item.condition || "").toLowerCase();
+          const stat = (item.status || "").toLowerCase();
+          
+          let finalBookValue = Number(item.book_value || 0);
+
+          // Logika Nol-kan Nilai
+          if (cond === 'rusak' || cond === 'hilang' || stat === 'hilang') {
+              finalBookValue = 0;
+          }
+
+          return {
+              ...item,
+              book_value: finalBookValue
+          };
+      });
+
+      setReportData({ ...result, data: processedData });
 
     } catch (err) {
-      console.error("Gagal load laporan:", err);
+      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -102,7 +113,7 @@ function ReportPage() {
 
   const handlePrint = useReactToPrint({
     contentRef: componentRef,
-    documentTitle: `Laporan_Sinergi_${reportType}_${selectedYear || 'AllTime'}`,
+    documentTitle: `Laporan_Aset_Sinergi_${selectedYear || 'AllTime'}`,
   });
 
   return (
@@ -112,7 +123,7 @@ function ReportPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">🖨️ Pusat Laporan</h1>
-          <p className="text-xs text-slate-500 mt-1">Cetak laporan resmi aset, depresiasi, dan berita acara.</p>
+          <p className="text-xs text-slate-500 mt-1">Cetak laporan resmi inventaris aset yayasan.</p>
         </div>
         <button 
           onClick={handlePrint}
@@ -126,28 +137,21 @@ function ReportPage() {
       {/* === CONTROLS PANEL === */}
       <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-4 gap-6">
         
-        {/* KOLOM 1: Pilih Jenis Laporan */}
-        <div className="col-span-1">
-          <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Jenis Laporan</label>
-          <div className="space-y-2">
-             <label className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all ${reportType === 'all' ? 'bg-[#009846]/10 border-[#009846]' : 'border-slate-200 hover:bg-slate-50'}`}>
-                <input type="radio" checked={reportType === 'all'} onChange={() => setReportType('all')} className="accent-[#009846]" /> 
-                <span className="text-xs font-medium text-slate-700">Semua Aset</span>
-             </label>
-             <label className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all ${reportType === 'broken' ? 'bg-red-50 border-red-500' : 'border-slate-200 hover:bg-slate-50'}`}>
-                <input type="radio" checked={reportType === 'broken'} onChange={() => setReportType('broken')} className="accent-red-500" /> 
-                <span className="text-xs font-medium text-slate-700">Aset Rusak</span>
-             </label>
-             <label className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all ${reportType === 'depreciation' ? 'bg-blue-50 border-blue-500' : 'border-slate-200 hover:bg-slate-50'}`}>
-                <input type="radio" checked={reportType === 'depreciation'} onChange={() => setReportType('depreciation')} className="accent-blue-500" /> 
-                <span className="text-xs font-medium text-slate-700">Depresiasi</span>
-             </label>
-          </div>
-        </div>
-
-        {/* KOLOM 2: Filter Umum */}
+        {/* KOLOM 1: Filter Kategori & Kondisi */}
         <div className="space-y-3 col-span-1">
-            {/* Filter Kategori */}
+            <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Kondisi Aset</label>
+                <select 
+                    className="w-full border border-slate-300 rounded px-2 py-1.5 text-xs focus:ring-1 focus:ring-[#009846] outline-none"
+                    value={selectedCondition}
+                    onChange={(e) => setSelectedCondition(e.target.value)}
+                >
+                    <option value="">-- Semua Kondisi --</option>
+                    <option value="baik">Baik</option>
+                    <option value="rusak">Rusak</option>
+                    <option value="hilang">Hilang</option>
+                </select>
+            </div>
             <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Kategori</label>
                 <select 
@@ -155,12 +159,14 @@ function ReportPage() {
                     value={selectedCategory}
                     onChange={(e) => setSelectedCategory(e.target.value)}
                 >
-                    <option value="">-- Semua --</option>
+                    <option value="">-- Semua Kategori --</option>
                     {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
             </div>
+        </div>
 
-            {/* === INPUT LOKASI BARU === */}
+        {/* KOLOM 2: Filter Lokasi & Tahun */}
+        <div className="space-y-3 col-span-1">
             <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Lokasi Aset</label>
                 <select 
@@ -172,8 +178,6 @@ function ReportPage() {
                     {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </select>
             </div>
-
-            {/* Filter Tahun */}
             <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tahun Beli</label>
                 <select 
@@ -182,16 +186,13 @@ function ReportPage() {
                     onChange={(e) => setSelectedYear(e.target.value)}
                 >
                     <option value="">-- Semua Tahun --</option>
-                    {years.map(y => (
-                        <option key={y} value={y}>{y}</option>
-                    ))}
+                    {years.map(y => <option key={y} value={y}>{y}</option>)}
                 </select>
             </div>
         </div>
 
-        {/* KOLOM 3: Filter Dana (BARU) */}
+        {/* KOLOM 3: Filter Dana & KMA */}
         <div className="space-y-3 col-span-1">
-            {/* Sumber Dana */}
             <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sumber Dana</label>
                 <select 
@@ -199,29 +200,26 @@ function ReportPage() {
                     value={selectedFunding}
                     onChange={(e) => {
                         setSelectedFunding(e.target.value);
-                        setSelectedKma(""); // Reset KMA kalau dana berubah
+                        setSelectedKma(""); // Reset KMA
                     }}
                 >
                     <option value="">-- Semua Dana --</option>
                     {fundingSources.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                 </select>
             </div>
-
-            {/* KMA (Hanya muncul/aktif jika Dana dipilih) */}
             <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">KMA / Sub-Anggaran</label>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Mata Anggaran (KMA)</label>
                 <select 
                     className="w-full border border-slate-300 rounded px-2 py-1.5 text-xs focus:ring-1 focus:ring-[#009846] outline-none disabled:bg-slate-100 disabled:text-slate-400"
                     value={selectedKma}
                     onChange={(e) => setSelectedKma(e.target.value)}
-                    disabled={!selectedFunding} // Matikan jika belum pilih dana
+                    disabled={!selectedFunding}
                 >
                     <option value="">-- Semua KMA --</option>
-                    {availableKmas.map(k => (
+                    {budgetCodes.map(k => (
                         <option key={k.id} value={k.id}>{k.code} - {k.name}</option>
                     ))}
                 </select>
-                {!selectedFunding && <p className="text-[9px] text-slate-400 mt-1">*Pilih Sumber Dana dulu</p>}
             </div>
         </div>
 
@@ -249,9 +247,12 @@ function ReportPage() {
             </div>
         ) : (
             <div className="shadow-2xl scale-[0.6] md:scale-90 origin-top transition-transform duration-300">
+               {/* TYPE SELALU 'all' (Laporan Inventaris Aset), 
+                  tapi datanya sudah kita filter di atas 
+               */}
                <ReportTemplate 
                   ref={componentRef} 
-                  type={reportType} 
+                  type="all" 
                   data={reportData.data || []} 
                   year={selectedYear}
                />

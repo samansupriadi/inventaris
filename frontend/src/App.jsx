@@ -44,6 +44,7 @@ import {
   API_BASE_URL,
   logoutAPI,
   fetchCurrentUser,
+  fetchBudgetCodes,
 } from "./api";
 
 // COMPONENTS
@@ -136,6 +137,8 @@ function App() {
   const [assetPage, setAssetPage] = useState(1);
   const ASSET_PAGE_SIZE = 10;
 
+   const [budgetCodes, setBudgetCodes] = useState([]);
+
   // ---------- AUTHENTICATION ----------
   const [auth, setAuth] = useState({ user: null, isLoggedIn: false });
   const [isAppLoading, setIsAppLoading] = useState(true);
@@ -208,6 +211,13 @@ function App() {
       const data = await fetchLocations();
       setLocations(data);
     } catch (err) { console.error(err); }
+  };
+
+  const loadBudgetCodes = async () => {
+    try {
+      const data = await fetchBudgetCodes();
+      setBudgetCodes(data);
+    } catch (err) { console.error("Gagal load KMA:", err); }
   };
 
   const loadPermissions = async () => {
@@ -286,7 +296,8 @@ function App() {
       loadUsers(),
       loadRoles(),
       loadEntities(),
-      loadPermissions()
+      loadPermissions(),
+      loadBudgetCodes(),
     ]);
     
     // setLoading(false);
@@ -588,6 +599,7 @@ function App() {
   const handlePrintQr = (asset) => setQrPrintAssets([asset]);
   const handleBulkPrintQr = () => setQrPrintAssets(filteredAssets);
 
+  // --- EXPORT CSV CERDAS (DENGAN DEPRESIASI & KMA) ---
   const handleExportCsv = () => {
     const rows = filteredAssets;
     if (!rows.length) {
@@ -595,30 +607,107 @@ function App() {
       return;
     }
 
+    // Helpers Data
     const getFundingName = (id) => fundingSources.find((x) => x.id === id)?.name || "-";
+    const getEntityName = (id) => entities.find((x) => x.id === id)?.name || "-";
+    const getKmaName = (id) => {
+      const kma = budgetCodes.find((b) => b.id === id);
+      return kma ? `${kma.code} - ${kma.name}` : "-";
+    };
     const formatDate = (dateString) => dateString ? new Date(dateString).toLocaleDateString("id-ID") : "";
     const getFullUrl = (path) => (!path ? "" : path.startsWith("http") ? path : `${API_BASE_URL}${path}`);
 
-    const header = ["Nama Aset", "Kode Aset", "Kategori", "Lokasi", "Detail Lokasi", "Kondisi", "Status", "Sumber Dana", "Nilai (Rp)", "Tanggal Pembelian", "Link Foto", "Link Kwitansi"];
+    // Header CSV
+    const header = [
+      "Nama Aset", "Kode Aset", "Kategori", "Lokasi", "Detail Lokasi", 
+      "Kondisi", "Status", "Entitas", "Sumber Dana", "Mata Anggaran (KMA)",
+      "Tanggal Beli", "Harga Perolehan (Rp)", "Masa Manfaat (Thn)", "Nilai Sisa (Rp)",
+      "Usia Aset (Bulan)", "Depresiasi/Thn (Rp)", "Akumulasi Depresiasi (Rp)", "Nilai Buku Saat Ini (Rp)",
+      "Link Foto", "Link Kwitansi"
+    ];
+
     const csvRows = [header];
 
     rows.forEach((a) => {
       const locName = locations.find(l => l.id === a.location_id)?.name || "-";
       const catName = categories.find(c => c.id === a.category_id)?.name || "-";
+      
+      // --- RUMUS DEPRESIASI (Straight Line) ---
+      const purchasePrice = Number(a.value) || 0;
+      const residualVal = Number(a.residual_value) || 0;
+      const usefulLifeYears = Number(a.useful_life) || 0;
+      
+      let usiaBulan = 0;
+      let depPerYear = 0;
+      let akumulasiDep = 0;
+      let bookValue = purchasePrice;
+
+      // 1. Hitung Normal Dulu
+      if (a.purchase_date && usefulLifeYears > 0) {
+        const buyDate = new Date(a.purchase_date);
+        const now = new Date();
+        
+        const diffYear = now.getFullYear() - buyDate.getFullYear();
+        const diffMonth = now.getMonth() - buyDate.getMonth();
+        usiaBulan = (diffYear * 12) + diffMonth;
+        if (usiaBulan < 0) usiaBulan = 0;
+
+        const depreciableAmount = purchasePrice - residualVal;
+        depPerYear = depreciableAmount / usefulLifeYears;
+
+        const depPerMonth = depPerYear / 12;
+        akumulasiDep = depPerMonth * usiaBulan;
+
+        if (akumulasiDep > depreciableAmount) {
+            akumulasiDep = depreciableAmount;
+        }
+
+        bookValue = purchasePrice - akumulasiDep;
+      }
+
+      // 👇 LOGIKA BARU: CEK KONDISI FISIK 👇
+      // Jika Rusak atau Hilang, Nilai Buku DIPAKSA JADI 0 (Write-off)
+      const cond = (a.condition || "").toLowerCase();
+      const stat = (a.status || "").toLowerCase();
+
+      if (cond === 'rusak' || cond === 'hilang' || stat === 'hilang') {
+          bookValue = 0;
+          // Opsional: Akumulasi depresiasi dianggap full (habis) atau biarkan hitungan waktu
+          // Biasanya Nilai Buku langsung 0 cukup untuk laporan.
+      }
+
+      // Masukkan ke Baris CSV
       csvRows.push([
-        a.name || "", a.code || "", catName, locName, a.location || "", 
-        a.condition || "", a.status || "", getFundingName(a.funding_source_id), 
-        a.value ? String(a.value) : "0", formatDate(a.purchase_date || a.created_at),
-        getFullUrl(a.photo_url), getFullUrl(a.receipt_url)
+        `"${a.name || ""}"`, 
+        `"${a.code || ""}"`, 
+        `"${catName}"`, 
+        `"${locName}"`, 
+        `"${a.location || ""}"`, 
+        a.condition || "", 
+        a.status || "", 
+        `"${getEntityName(a.entity_id)}"`, 
+        `"${getFundingName(a.funding_source_id)}"`,
+        `"${getKmaName(a.budget_code_id)}"`,
+        formatDate(a.purchase_date),
+        purchasePrice,
+        usefulLifeYears,
+        residualVal,
+        usiaBulan,
+        Math.round(depPerYear),
+        Math.round(akumulasiDep),
+        Math.round(bookValue),
+        getFullUrl(a.photo_url),
+        getFullUrl(a.receipt_url)
       ]);
     });
 
-    const csvString = csvRows.map(row => row.map(cell => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+    // Buat File CSV
+    const csvString = csvRows.map(e => e.join(",")).join("\n");
     const blob = new Blob(["\uFEFF" + csvString], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `Data_Aset_SF_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `Laporan_Aset_Lengkap_${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -658,6 +747,8 @@ function App() {
           default: return "Sinergi Foundation Inventaris";
       }
   };
+
+ 
 
   // ---------- UPLOAD FOTO (LANGSUNG DARI TABEL) ----------
   const handleUploadPhoto = async (assetId, event) => {
