@@ -220,9 +220,6 @@ router.post("/:id/finalize", authorize("finalize_opname"), async (req, res) => {
     );
     if (sessionRes.rows.length === 0) throw new Error("Sesi tidak ditemukan");
     
-    // Pastikan sesi belum finalized
-    // (Opsional cek status dulu biar aman)
-
     const targetLocationId = sessionRes.rows[0].location_id;
 
     // 2. Ambil Semua Item Hasil Scan di Sesi Ini
@@ -244,11 +241,11 @@ router.post("/:id/finalize", authorize("finalize_opname"), async (req, res) => {
     for (const item of items) {
         
         // --- KASUS A: MISSING (Tidak Ditemukan) ---
-        // Barang ada di list tapi tidak discan -> Tandai HILANG
+        // Barang ada di list tapi tidak discan -> Tandai HILANG di Master Aset
         if (item.status === 'Missing') {
             await client.query(
                 `UPDATE assets 
-                 SET status = 'lost', condition = 'hilang', updated_at = NOW() 
+                 SET status = 'hilang', condition = 'hilang', updated_at = NOW() 
                  WHERE id = $1`, 
                 [item.asset_id]
             );
@@ -260,22 +257,22 @@ router.post("/:id/finalize", authorize("finalize_opname"), async (req, res) => {
             let newStatus = 'available'; // Default
             
             // Logika Status:
-            // 1. Jika Fisik RUSAK -> Status jadi 'rusak' (Mutlak, biar ga bisa dipinjam)
+            // 1. Jika Fisik RUSAK -> Status jadi 'rusak' (Mutlak)
             if (item.condition_actual === 'rusak') {
                 newStatus = 'rusak';
             } 
             // 2. Jika Fisik BAIK
             else if (item.condition_actual === 'baik') {
-                // Cek status master saat ini
+                // Cek status master saat ini, kalau 'borrowed' biarkan 'borrowed'
                 if (item.current_master_status === 'borrowed') {
-                    newStatus = 'borrowed'; // TETAP DIPINJAM (Hormati peminjaman)
+                    newStatus = 'borrowed'; 
                 } else {
-                    newStatus = 'available'; // Sisanya (hilang/rusak/available) jadi available kembali
+                    newStatus = 'available';
                 }
             }
             // 3. Jika Fisik Hilang (Kasus jarang, user input manual hilang)
             else if (item.condition_actual === 'hilang') {
-                newStatus = 'lost';
+                newStatus = 'hilang';
             }
 
             // Query Dasar Update
@@ -285,7 +282,7 @@ router.post("/:id/finalize", authorize("finalize_opname"), async (req, res) => {
             `;
             let params = [item.condition_actual, newStatus];
 
-            // KHUSUS MOVED: Update Lokasinya juga!
+            // KHUSUS MOVED: Update Lokasinya juga ke lokasi opname ini!
             if (item.status === 'Moved' && targetLocationId) {
                 updateQuery += `, location_id = $3 `;
                 params.push(targetLocationId);
@@ -303,7 +300,7 @@ router.post("/:id/finalize", authorize("finalize_opname"), async (req, res) => {
         updateCount++;
     }
 
-    // 4. Tutup Sesi Opname
+    // 4. Tutup Sesi Opname (Isi end_date dan verified_by)
     await client.query(
         `UPDATE opname_sessions 
          SET status = 'Finalized', finalized_at = NOW(), verified_by = $1, end_date = CURRENT_DATE
@@ -320,7 +317,7 @@ router.post("/:id/finalize", authorize("finalize_opname"), async (req, res) => {
         entity_id: sessionId,
         details: { 
             updated_assets: updateCount, 
-            note: "Rekonsiliasi otomatis: Missing->Lost, Moved->Pindah Lokasi, Rusak->Status Rusak" 
+            note: "Rekonsiliasi otomatis: Missing->Hilang, Moved->Pindah Lokasi" 
         }
     });
 
